@@ -36,6 +36,13 @@ Cost: ~1 HTTP request. Time: <1s.
 Cost: 1 GET request + parsing. Time: 1-3s.
 
 - Fetch raw HTML
+- Check for buried data indicators:
+  - `<form>` elements with search/filter/query actions → reverse-engineer POST params
+  - Links to downloadable files (`.csv`, `.xlsx`, `.json`, `.xml`) → direct bulk download
+  - Navigation paths to `/data/`, `/datasets/`, `/download/`, `/bulk/`, `/developer/`, `/api/`, `/open-data/`
+  - "Download," "Export," "Bulk data" language in page content
+  - Hidden API documentation (often at undiscoverable URLs)
+  - Pagination metadata that implies a larger queryable dataset behind the visible surface
 - Check for framework fingerprints:
   - WordPress: `/wp-json/wp/v2/` endpoint, `wp-content` paths, REST API discovery link in `<head>`
   - Next.js: `__NEXT_DATA__` script tag, `_next/` paths
@@ -177,6 +184,8 @@ Claude isn't running the scraper. Claude is the _intelligence layer_:
 3. **Ambiguity resolution** — When a site has multiple possible data layers (e.g., both embedded JSON and an API), Claude decides which is more complete/reliable.
 4. **Selector generation** — For static HTML sites, Claude generates CSS selectors or extraction logic from the markup.
 5. **Strategy recommendation** — Synthesize all probe results into a clear extraction plan.
+6. **Form reverse-engineering** — Read a government/institutional form's HTML, extract the POST endpoint, required parameters, hidden fields, session tokens, and pagination logic. This is the NHTSA problem: the data is behind a search form, but the underlying API is clean if you know how to call it.
+7. **Buried data detection** — Scan page content, navigation trees, and link structures for bulk downloads, data catalogs, and export functions that aren't prominent in the UI.
 
 This is the piece that doesn't exist in any scraping framework. The discovery intelligence.
 
