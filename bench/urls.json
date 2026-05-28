@@ -1,0 +1,90 @@
+{
+  "_comment": "Test URL set for the Sonnet-vs-Opus benchmark. Each entry has the URL and an expected_category for sanity-checking model outputs. Expected categories are loose hypotheses; the benchmark records what the model actually says.",
+  "_schema_version": "1",
+  "urls": [
+    {
+      "url": "https://www.sasaki.com/projects",
+      "expected_category": "direct_api",
+      "expected_subcategory_hint": "algolia",
+      "notes": "Algolia search backend. Phase 1 reference case."
+    },
+    {
+      "url": "https://www.nhtsa.gov/",
+      "expected_category": "form_gated_bulk",
+      "notes": "Government dataset with form-gated and bulk CSV access."
+    },
+    {
+      "url": "https://www.ford.com/",
+      "expected_category": "static_html",
+      "expected_subcategory_hint": "aem",
+      "notes": "Adobe Experience Manager. Enterprise server-rendered."
+    },
+    {
+      "url": "https://techcrunch.com/",
+      "expected_category": "direct_api",
+      "expected_subcategory_hint": "wordpress",
+      "notes": "WordPress with /wp-json/ REST API."
+    },
+    {
+      "url": "https://vercel.com/",
+      "expected_category": "embedded_data",
+      "expected_subcategory_hint": "next",
+      "notes": "Next.js with __NEXT_DATA__ blobs."
+    },
+    {
+      "url": "https://docs.python.org/3/",
+      "expected_category": "static_html",
+      "notes": "Sphinx-generated static documentation."
+    },
+    {
+      "url": "https://www.allbirds.com/",
+      "expected_category": "direct_api",
+      "expected_subcategory_hint": "shopify",
+      "notes": "Shopify storefront with /products.json bulk access."
+    },
+    {
+      "url": "https://www.webflow.com/",
+      "expected_category": "static_html",
+      "expected_subcategory_hint": "webflow",
+      "notes": "Webflow CMS, data-wf-* attributes."
+    },
+    {
+      "url": "https://www.squarespace.com/",
+      "expected_category": "static_html",
+      "expected_subcategory_hint": "squarespace",
+      "notes": "Squarespace marketing site."
+    },
+    {
+      "url": "https://www.gatsbyjs.com/",
+      "expected_category": "embedded_data",
+      "expected_subcategory_hint": "gatsby",
+      "notes": "Gatsby SSG with page-data JSON chunks."
+    },
+    {
+      "url": "https://graphql.org/",
+      "expected_category": "static_html",
+      "notes": "Static documentation site for a GraphQL ecosystem; tests that 'graphql' fingerprint does not cause false API classification."
+    },
+    {
+      "url": "https://www.wikipedia.org/",
+      "expected_category": "static_html",
+      "notes": "Server-rendered HTML; reference for cleanly-parseable content."
+    },
+    {
+      "url": "https://news.ycombinator.com/",
+      "expected_category": "static_html",
+      "notes": "Plain HTML table layout. Edge case: no framework signatures at all."
+    },
+    {
+      "url": "https://www.theverge.com/",
+      "expected_category": "direct_api",
+      "expected_subcategory_hint": "wordpress",
+      "notes": "WordPress.com VIP-hosted; /wp-json/ available."
+    },
+    {
+      "url": "https://stripe.com/",
+      "expected_category": "static_html",
+      "notes": "Custom design system; well-cached server-rendered content."
+    }
+  ]
+}
