@@ -63,7 +63,7 @@ Or the full JSON output (`--json` from CLI, `result.model_dump()` from library):
 }
 ```
 
-Two seconds per probe. $0.001 to $0.005 in tokens depending on payload size. You're done with the first hour of detective work that usually eats the front of every scraping project.
+About 15 seconds per probe. ~$0.015 in tokens at current Sonnet rates. You're done with the first hour of detective work that usually eats the front of every scraping project.
 
 ---
 
@@ -87,7 +87,7 @@ cartograph's real competitor isn't compute cost. It's human time. Two ways the m
 
 | Approach | Time | Cost |
 |---|---|---|
-| cartograph (stages 1+2+4) | ~2 minutes | ~$0.05 to $0.25 in tokens |
+| cartograph (stages 1+2+4) | ~12 minutes | ~$0.75 in tokens |
 | Headless browser per URL | ~15-25 minutes | ~$0 compute, ~$50-150 in developer time |
 | Manual devtools inspection | ~25-75 hours | ~$2,500-7,500 in labor |
 
@@ -98,11 +98,11 @@ If you're piping into another LLM (agent, RAG, summarizer), the structured probe
 | Input to your LLM | Typical size | Input tokens (~) | Cost at Sonnet rates |
 |---|---|---|---|
 | Raw HTML (typical page) | 200-500 KB | 50K-125K | $0.15-0.38 |
-| cartograph probe result | 2-5 KB | 500-1,250 | $0.002-0.004 |
+| cartograph probe result | 2-5 KB | 1,500-2,500 | $0.005-0.008 |
 
 Roughly 99% less spend on downstream input tokens. The probe already knows what to fetch and how, so the model doesn't have to figure it out from the raw DOM.
 
-Numbers are working estimates against the current test URL set. The [CHANGELOG](CHANGELOG.md) will update them when real benchmark data lands.
+Numbers measured against a 15-URL benchmark set (2026-05-28, commit `c1f8c15`). Median probe cost: $0.015. Median input tokens: 1,767. Full results in [`bench/results.json`](bench/results.json).
 
 ---
 

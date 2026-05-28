@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced working-estimate cost figures in README, how-it-works, and why-this-exists with measured values from `bench/run_benchmark.py` (15-URL test set, run 2026-05-28 at commit `c1f8c15`). Median probe cost: $0.015. Median input tokens: 1,767. Sonnet confirmed as pin: 5x cheaper than Opus, higher confidence, 14/15 classification agreement.
+
 ### Planned for Phase 2
 
 - Optional Playwright browser extra (`pip install cartograph-ai[browser]`). Uses system Chrome or Edge if present; falls back to Playwright's bundled Chromium only as a last resort.

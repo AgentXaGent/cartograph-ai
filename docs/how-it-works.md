@@ -13,7 +13,7 @@ A probe runs in four stages. Each stage is cheaper to skip than to run. The pipe
 ```
 URL → HTTP probe → HTML analysis → [optional JS execution] → Claude classification → result
         ~1s           ~1-3s              ~3-10s                     ~1s
-       (free)        (free)            (browser extra)        ($0.001-$0.005)
+       (free)        (free)            (browser extra)          (~$0.015)
 ```
 
 Stages 1, 2, and 4 always run. Stage 3 only runs when the user installed `cartograph-ai[browser]` and the earlier stages couldn't get clean signal without rendering.
@@ -87,7 +87,7 @@ When the pinned model is deprecated, the upgrade is a versioned release of carto
 
 Claude does not see raw HTML. The probe pipeline collects structured data in stages 1-3 and assembles a JSON dictionary that summarizes what was found: detected frameworks, captured embedded blobs (with sizes and hashes; full content only when small), discovered endpoints, form-gated dataset evidence, structural fingerprints. That dictionary is the input.
 
-Typical payload runs 2-5 KB after structuring. Small enough to fit comfortably in Sonnet's context window and small enough to keep per-probe cost in the $0.001-$0.005 range.
+Typical payload runs 2-5 KB after structuring. Small enough to fit comfortably in Sonnet's context window. Measured median cost: ~$0.015 per probe (benchmark run 2026-05-28).
 
 When a captured blob is larger than a few KB (some framework state blobs run 100+ KB), the payload includes the blob's key, size, and a content hash plus a short structural sample, not the full content. This keeps token cost predictable and prevents one inline JSON blob from blowing out the context.
 
@@ -235,7 +235,7 @@ Failure isn't hidden. Every probe result includes `probe_stages_completed`, `pro
 A successful probe of a typical public site:
 
 - **Stages 1+2:** under 3 seconds end to end. Pure Python, no API calls.
-- **Stage 4 (Claude):** $0.001 to $0.005 per probe at current Sonnet pricing. The range reflects payload variance: simple JSON-LD sites land at the low end, complex enterprise DOMs with large framework state blobs land at the high end.
+- **Stage 4 (Claude):** ~$0.011 to $0.020 per probe at current Sonnet pricing (measured median: $0.015). The range reflects payload variance: simple JSON-LD sites land at the low end, complex enterprise DOMs with large framework state blobs land at the high end.
 - **Stage 3 (if it runs):** adds 3 to 10 seconds depending on the site. No API cost.
 
 A batch of 50 probes against a curated source landscape runs in under three minutes and costs $0.05 to $0.25 depending on payload distribution. That's the economic shape of the tool.

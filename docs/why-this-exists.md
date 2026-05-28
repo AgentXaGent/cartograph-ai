@@ -38,7 +38,7 @@ The substrate is the same. The mode is yours. Each step deeper in the stack pull
 
 cartograph wasn't economically viable in 2023. Using an LLM to classify a website would have cost more than just paying a contractor to figure it out by hand. The tool is possible in 2026 because three things changed.
 
-Token costs collapsed. A typical probe is around $0.001 to $0.005 in Claude API calls, depending on payload size. At that price, probing is cheap enough to run unattended at scale.
+Token costs collapsed. A typical probe runs about $0.015 in Claude API calls (measured median across a 15-URL benchmark set). At that price, probing is cheap enough to run unattended at scale.
 
 Claude got accurate enough at structured classification that the operator can review judgment-grade output rather than rewrite the model's work. The intelligence layer doesn't need to be perfect; it needs to be honest about its confidence and good enough to compress 30 to 90 minutes of detective work into 2 seconds. It is.
 
