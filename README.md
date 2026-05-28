@@ -102,7 +102,7 @@ If you're piping into another LLM (agent, RAG, summarizer), the structured probe
 
 Roughly 99% less spend on downstream input tokens. The probe already knows what to fetch and how, so the model doesn't have to figure it out from the raw DOM.
 
-Numbers measured against a 15-URL benchmark set (2026-05-28, commit `c1f8c15`). Median probe cost: $0.015. Median input tokens: 1,767. Full results in [`bench/results.json`](bench/results.json).
+Real-world payloads run larger than initial back-of-envelope estimates; the cost math still favors cartograph by 10-1000x over alternatives. Numbers measured against a 15-URL benchmark set (2026-05-28, commit `c1f8c15`); `claude-sonnet-4-6` pinned. Median probe cost: $0.015. Full results in [`bench/results.json`](bench/results.json).
 
 ---
 
