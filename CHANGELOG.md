@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Added
+
+- Published to PyPI: `pip install cartograph-ai` now resolves from the public registry. Project page: https://pypi.org/project/cartograph-ai/.
+
 ### Changed
 
 - Replaced working-estimate cost figures in README, how-it-works, and why-this-exists with measured values from `bench/run_benchmark.py` (15-URL test set, run 2026-05-28 at commit `c1f8c15`). Median probe cost: $0.015. Median input tokens: 1,767. Sonnet confirmed as pin: 5x cheaper than Opus, higher confidence, 14/15 classification agreement.

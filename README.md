@@ -1,5 +1,7 @@
 # cartograph
 
+[![PyPI version](https://img.shields.io/pypi/v/cartograph-ai.svg)](https://pypi.org/project/cartograph-ai/)
+
 **Probe before extract.** Give cartograph a URL. It tells you how the site serves data and recommends the optimal extraction strategy. Claude is the intelligence layer. CLI and Python library, equal citizens.
 
 ---
