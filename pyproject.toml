@@ -53,6 +53,10 @@ dev = [
     "ruff>=0.5",
 ]
 
+
+[project.scripts]
+cartograph-ai = "cartograph_ai.cli:app"
+
 [project.urls]
 Homepage = "https://github.com/AgentXaGent/cartograph-ai"
 Documentation = "https://github.com/AgentXaGent/cartograph-ai/blob/main/docs/how-it-works.md"
