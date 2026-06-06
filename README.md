@@ -4,6 +4,8 @@
 
 **Probe before extract.** Give cartograph a URL. It tells you how the site serves data and recommends the optimal extraction strategy. Claude is the intelligence layer. CLI and Python library, equal citizens.
 
+> **Mission.** Establish probe-before-extract as a standard primitive in the agentic web-data field, the way `ripgrep` became universally assumed for codebase search. Low-cost (~$0.015/URL), high-effectiveness (production data in [`docs/real-world-effectiveness.md`](docs/real-world-effectiveness.md)), composable with every extractor (recommender, not competitor), open-source MIT. Cartograph is the canonical implementation; the long-term goal is for the *primitive* to be the standard.
+
 ---
 
 ## What it solves
