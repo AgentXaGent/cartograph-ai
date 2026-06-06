@@ -10,15 +10,39 @@ What cartograph has actually done in production runs. This page is updated after
 
 | Metric | Value |
 |---|---|
-| Sessions logged | 3 |
-| URLs probed | 64 |
-| Total spend | ~$0.97 |
-| Wall-clock with parallelism | ~3 minutes |
-| Successful classifications | 53 (83%) |
-| Classification failures | 11 (17% — schema validation + Stage 1 timeouts) |
-| Estimated manual time saved | ~3-4 days of devtools inspection |
+| Sessions logged | 4 (incl. Session 0 — pre-tool proof of need) |
+| URLs / firm domains | 84 (20 manual pre-tool + 64 via cartograph) |
+| Tool-era spend | ~$0.97 |
+| Wall-clock with parallelism | ~3 minutes (tool-era only) |
+| Successful classifications / scrapes | 72 / 84 (~86%) |
+| External deliverable shipped | 1 (multi-firm structured-data report to academic researcher, Session 0) |
+| Estimated manual time saved (tool-era) | ~3-4 days of devtools inspection |
 
-The economic case is settled at $1 of probe ≈ 1 week of manual reconnaissance. The remaining engineering questions are about lifting the 83% success rate and promoting the qualitative wins to first-class outputs.
+Session 0 is the load-bearing proof-of-need: we delivered 19/20 firm scrapes for an external academic-researcher client by doing the reconnaissance manually, two days before cartograph v0.1.0 shipped. The tool is the productized version of that recon discipline. The economic case is settled at ~$1 of probe ≈ ~1 week of manual reconnaissance. The remaining engineering questions are about lifting the success rate above 95% and promoting the qualitative wins to first-class outputs.
+
+---
+
+## Session 0 — Multi-Firm Structured-Data Scrape for Academic Research (2026-05-26)
+
+This session ran **two days before cartograph v0.1.0 was tagged**. It is included as the load-bearing proof-of-need: the work that demonstrated cartograph as a discrete tool was worth building.
+
+A client engagement asked for structured project-and-personnel data across 20 firms in a single professional sector (landscape architecture). Every firm had a different website architecture. Some were WordPress-backed. Some were Vercel. Some were fully JS-rendered SPAs. Some 403'd on plain HTTP. Some had no rate limiting; some had aggressive blocks. Figuring out *which architecture each firm used* was the dominant cost, eating the front end of the engagement before any extraction code could be written.
+
+**Numerical results:**
+- Firms targeted: 20
+- Successful structured-data deliverables: **19 / 20 (95%)**
+- NO-GO identified upfront: 1 (fully JS-rendered firm site, would have required full Playwright pipeline)
+- Total deliverable: 19 Excel workbooks (project data + personnel data) shipped to the researcher
+- Cost: human time only; no per-URL probe cost line item existed yet
+
+**What it actually delivered:**
+
+- 19 structured-data workbooks suitable for downstream academic analysis (project counts, geographic distribution, personnel credentials, leadership tier counts).
+- A scaled-by-config dashboard prototype consuming the same `data.json` artifact.
+- Specifically: identified that two firms (large enterprise sites) returned 403 on plain HTTP requests and needed structured-API paths (`/wp-json/wp/v2/`) — exactly the kind of fingerprint cartograph would have classified automatically two days later.
+- Confirmed Design Workshop pattern (fully JS-rendered) as the single NO-GO, *upfront*, saving the build cost on the only target that would not have worked.
+
+**Why this session mattered:** the pattern of *every site has a different architecture, the cost of figuring it out manually is the dominant cost, and one in twenty will be unworkable regardless* is exactly what cartograph's pre-extraction reconnaissance compresses. Manual recon worked here because we had a small enough target list and enough human attention. The motivation for building cartograph as a tool was the recognition that this same shape recurs constantly and the manual cost compounds.
 
 ---
 
