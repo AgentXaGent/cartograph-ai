@@ -13,10 +13,24 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 ### Added
 
 - Published to PyPI: `pip install cartograph-ai` now resolves from the public registry. Project page: https://pypi.org/project/cartograph-ai/.
+- `docs/real-world-effectiveness.md` — log of production sessions with measured outcomes. Three sessions to date (64 URLs, ~$0.97 spend, 83% classification success), with qualitative insights from each session that shape v0.2 priorities.
+
+### Documented
+
+- The hallucination-stripping mechanism (stage that verifies endpoints in the model's response against actual probe data and discards fabrications before JSON emission) is now documented as a working feature in the effectiveness log. Was previously implicit. Issue queued to promote `hallucinations_stripped: [...]` to a first-class JSON field in v0.2.
+- The `limitations` field has been observed surfacing strategically valuable redirects (e.g., recommending a structured API alternative when scraping is blocked at the surface layer). Currently treated as informational; v0.2 will promote it to a first-class `alternative_paths` output.
 
 ### Changed
 
 - Replaced working-estimate cost figures in README, how-it-works, and why-this-exists with measured values from `bench/run_benchmark.py` (15-URL test set, run 2026-05-28 at commit `c1f8c15`). Median probe cost: $0.015. Median input tokens: 1,767. Sonnet confirmed as pin: 5x cheaper than Opus, higher confidence, 14/15 classification agreement.
+
+### Planned for v0.2 (sharpening from cross-session patterns)
+
+- Schema-validation failures: retry-with-correction pass before erroring (Issue: schema-retry).
+- Stage 1 timeouts: produce a `probe_unreachable` result instead of an error (Issue: graceful-stage-1).
+- Promote `limitations` → `alternative_paths` as a first-class output (Issue: limitations-promotion).
+- Surface `hallucinations_stripped` in JSON output and `--verbose` text output (Issue: surface-strip).
+- Heuristic: "did you probe an index/listing page when you probably wanted a content page?" (Issue: right-level-probe).
 
 ### Planned for Phase 2
 

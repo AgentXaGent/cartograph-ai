@@ -106,6 +106,8 @@ Roughly 99% less spend on downstream input tokens. The probe already knows what 
 
 Real-world payloads run larger than initial back-of-envelope estimates; the cost math still favors cartograph by 10-1000x over alternatives. Numbers measured against a 15-URL benchmark set (2026-05-28, commit `c1f8c15`); `claude-sonnet-4-6` pinned. Median probe cost: $0.015. Full results in [`bench/results.json`](bench/results.json).
 
+**Production track record.** Across three production sessions (state DOI probes, dealer/listing sites, and a federal-bill surveillance surface), cartograph has classified **64 URLs at ~$0.97 total spend, 83% successful classifications**, with an estimated 3-4 days of devtools inspection avoided. The qualitative wins are documented in [`docs/real-world-effectiveness.md`](docs/real-world-effectiveness.md) — the `limitations` field has surfaced strategically useful API-instead-of-scraping redirects, and the in-pipeline hallucination-stripping has caught fabricated endpoints before they reached the output (a guard most LLM-extraction tools ship without).
+
 ---
 
 ## Harder example: enterprise site
