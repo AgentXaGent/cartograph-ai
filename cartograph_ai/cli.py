@@ -173,6 +173,13 @@ def main(
     timeout: float = typer.Option(
         10.0, "--timeout", help="Per-request timeout in seconds."
     ),
+    contact_email: str = typer.Option(
+        None,
+        "--contact-email",
+        envvar="CARTOGRAPH_CONTACT_EMAIL",
+        help="Operator contact email, declared in the User-Agent on hosts "
+        "that ask for it (SEC convention).",
+    ),
     no_preflight: bool = typer.Option(
         False,
         "--no-preflight",
@@ -204,6 +211,7 @@ def main(
                 model=model,
                 timeout=timeout,
                 preflight_key_check=not no_preflight,
+                contact_email=contact_email,
             ),
         )
     except CartographError as exc:

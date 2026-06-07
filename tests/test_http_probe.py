@@ -11,8 +11,10 @@ import pytest
 import respx
 
 from cartograph_ai.stages.http_probe import (
+    DEFAULT_ACCEPT_HEADERS,
     DEFAULT_USER_AGENT,
     probe_http,
+    user_agent_for,
 )
 
 
@@ -295,3 +297,160 @@ def test_probe_truncates_large_body(client):
     assert out["body_truncated"] is True
     assert len(out["body"]) == _BODY_MAX_BYTES
     assert out["body_size_bytes"] == len(big)
+
+
+# ---------------- Declared UA + politeness (issue #13) ------------------
+
+
+def _mock_minimal_site(host: str) -> None:
+    respx.get(f"https://{host}/").mock(
+        return_value=httpx.Response(200, content=SASAKI_HTML)
+    )
+    respx.get(f"https://{host}/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get(f"https://{host}/sitemap.xml").mock(return_value=httpx.Response(404))
+    respx.get(f"https://{host}/sitemap_index.xml").mock(
+        return_value=httpx.Response(404)
+    )
+
+
+def test_user_agent_for_default_is_unchanged_off_convention_hosts():
+    assert (
+        user_agent_for("https://www.sasaki.com/", contact_email="x@y.com")
+        == DEFAULT_USER_AGENT
+    )
+
+
+def test_user_agent_for_sec_appends_contact_email():
+    ua = user_agent_for(
+        "https://www.sec.gov/edgar/search/", contact_email="ops@example.com"
+    )
+    assert "ops@example.com" in ua
+    assert ua.startswith("cartograph-ai/")
+
+
+def test_user_agent_for_sec_env_var_fallback(monkeypatch):
+    monkeypatch.setenv("CARTOGRAPH_CONTACT_EMAIL", "env@example.com")
+    ua = user_agent_for("https://data.sec.gov/api/xbrl/")
+    assert "env@example.com" in ua
+
+
+def test_user_agent_for_sec_without_contact_falls_back_to_default(monkeypatch):
+    monkeypatch.delenv("CARTOGRAPH_CONTACT_EMAIL", raising=False)
+    assert user_agent_for("https://www.sec.gov/") == DEFAULT_USER_AGENT
+
+
+def test_user_agent_for_custom_ua_never_overridden():
+    assert (
+        user_agent_for(
+            "https://www.sec.gov/",
+            user_agent="my-custom-agent/1.0",
+            contact_email="x@y.com",
+        )
+        == "my-custom-agent/1.0"
+    )
+
+
+def test_user_agent_for_does_not_match_lookalike_hosts():
+    # evil-sec.gov.example.com must not trigger the SEC convention; nor
+    # should notsec.gov (suffix match must be on dot boundaries).
+    assert (
+        user_agent_for("https://notsec.gov/", contact_email="x@y.com")
+        == DEFAULT_USER_AGENT
+    )
+
+
+@respx.mock
+def test_probe_sends_browser_plausible_accept_headers():
+    _mock_minimal_site("www.sasaki.com")
+    client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe_http("https://www.sasaki.com/", client=client)
+    finally:
+        client.close()
+    request = respx.calls[0].request
+    assert request.headers["Accept"] == DEFAULT_ACCEPT_HEADERS["Accept"]
+    assert (
+        request.headers["Accept-Language"]
+        == DEFAULT_ACCEPT_HEADERS["Accept-Language"]
+    )
+    assert request.headers["User-Agent"] == DEFAULT_USER_AGENT
+
+
+@respx.mock
+def test_probe_sec_request_carries_declared_contact(monkeypatch):
+    monkeypatch.delenv("CARTOGRAPH_CONTACT_EMAIL", raising=False)
+    monkeypatch.setattr(
+        "cartograph_ai.stages.http_probe.time.sleep", lambda s: None
+    )
+    _mock_minimal_site("www.sec.gov")
+    client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe_http(
+            "https://www.sec.gov/", client=client, contact_email="ops@example.com"
+        )
+    finally:
+        client.close()
+    request = respx.calls[0].request
+    assert "ops@example.com" in request.headers["User-Agent"]
+
+
+@respx.mock
+def test_probe_paces_gov_hosts(monkeypatch):
+    # Issue #13: 1 req/sec politeness default on .gov. The probe makes 4
+    # requests against this mock (page, robots, two sitemap candidates),
+    # so at least 3 pacing sleeps must occur.
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "cartograph_ai.stages.http_probe.time.sleep",
+        lambda s: sleeps.append(s),
+    )
+    _mock_minimal_site("www.nhtsa.gov")
+    client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe_http("https://www.nhtsa.gov/", client=client)
+    finally:
+        client.close()
+    assert len(sleeps) >= 3
+    assert all(0 < s <= 1.0 for s in sleeps)
+
+
+@respx.mock
+def test_probe_does_not_pace_non_gov_hosts(monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "cartograph_ai.stages.http_probe.time.sleep",
+        lambda s: sleeps.append(s),
+    )
+    _mock_minimal_site("www.sasaki.com")
+    client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe_http("https://www.sasaki.com/", client=client)
+    finally:
+        client.close()
+    assert sleeps == []
+
+
+@respx.mock
+def test_probe_paces_after_429(monkeypatch):
+    # A 429 on the main page puts the host on the throttle list for the
+    # rest of the probe.
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        "cartograph_ai.stages.http_probe.time.sleep",
+        lambda s: sleeps.append(s),
+    )
+    host = "rate-limited.example.com"
+    respx.get(f"https://{host}/").mock(
+        return_value=httpx.Response(429, content="slow down")
+    )
+    respx.get(f"https://{host}/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get(f"https://{host}/sitemap.xml").mock(return_value=httpx.Response(404))
+    respx.get(f"https://{host}/sitemap_index.xml").mock(
+        return_value=httpx.Response(404)
+    )
+    client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe_http(f"https://{host}/", client=client)
+    finally:
+        client.close()
+    assert len(sleeps) >= 1

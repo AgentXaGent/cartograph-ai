@@ -72,6 +72,12 @@ class ProbeOptions:
             API key before any HTTP request is sent to the probe target
             (issue #18). A bad key fails fast with PreflightKeyError and
             never touches the target host.
+        contact_email: Operator contact email for hosts with a published
+            declared-UA convention (SEC). Falls back to the
+            CARTOGRAPH_CONTACT_EMAIL environment variable (issue #13).
+        polite_delay: Seconds between Stage 1 requests to the same host.
+            None means automatic: 1 req/sec on .gov hosts and any host
+            answering 429/503; no pacing elsewhere (issue #13).
     """
 
     strict: bool = False
@@ -82,6 +88,8 @@ class ProbeOptions:
     user_agent: str = DEFAULT_USER_AGENT
     retry_on_stage1_failure: bool = True
     preflight_key_check: bool = True
+    contact_email: Optional[str] = None
+    polite_delay: Optional[float] = None
 
 
 def probe(
@@ -361,6 +369,8 @@ def _run_stage1(
         client=http_client,
         timeout=opts.timeout,
         user_agent=opts.user_agent,
+        contact_email=opts.contact_email,
+        polite_delay=opts.polite_delay,
     )
     if stage1["error"] and opts.retry_on_stage1_failure:
         log.info("cartograph Stage 1 transient error; retrying once: %s", stage1["error"])
@@ -370,6 +380,8 @@ def _run_stage1(
             client=http_client,
             timeout=opts.timeout,
             user_agent=opts.user_agent,
+            contact_email=opts.contact_email,
+            polite_delay=opts.polite_delay,
         )
     return stage1
 

@@ -11,18 +11,121 @@ serialises cleanly into the Stage 4 prompt payload.
 
 from __future__ import annotations
 
+import logging
+import os
 import re
+import time
 from typing import Any, Optional
 
 import httpx
 
 from cartograph_ai._version import __version__
 
+log = logging.getLogger("cartograph_ai")
+
 DEFAULT_USER_AGENT = (
     f"cartograph-ai/{__version__} (+https://github.com/AgentXaGent/cartograph-ai)"
 )
 """User-Agent string. Identifies the tool honestly so site owners can
 distinguish probes from generic scrapers."""
+
+CONTACT_EMAIL_ENV_VAR = "CARTOGRAPH_CONTACT_EMAIL"
+"""Environment variable consulted for the operator contact email when
+none is passed explicitly. Used for per-domain declared-UA conventions
+(currently SEC). This is disclosure, not evasion (issue #13)."""
+
+DEFAULT_ACCEPT_HEADERS: dict[str, str] = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+"""Browser-plausible Accept headers. Several gov CDNs reject requests
+with httpx's bare defaults; declaring ordinary content-negotiation
+headers is honest (we do want HTML) and removes a needless tell."""
+
+# Hosts whose published automation policy asks for a declared contact in
+# the User-Agent. SEC documents the convention explicitly:
+# "Sample Company Name AdminContact@<sample company domain>.com"
+_DECLARED_CONTACT_HOST_SUFFIXES: tuple[str, ...] = ("sec.gov",)
+
+_POLITE_DELAY_GOV_DEFAULT = 1.0
+"""Default seconds between requests to the same .gov host (issue #13)."""
+
+
+def user_agent_for(
+    url: str,
+    *,
+    user_agent: str = DEFAULT_USER_AGENT,
+    contact_email: Optional[str] = None,
+) -> str:
+    """Return the effective User-Agent for ``url``.
+
+    For hosts that publish a declared-UA convention (SEC), append the
+    operator contact email per their documented format. Explicit custom
+    user agents are never overridden. The contact email comes from the
+    ``contact_email`` argument or the ``CARTOGRAPH_CONTACT_EMAIL``
+    environment variable.
+    """
+    if user_agent != DEFAULT_USER_AGENT:
+        return user_agent
+    host = httpx.URL(url).host or ""
+    if not any(
+        host == sfx or host.endswith("." + sfx)
+        for sfx in _DECLARED_CONTACT_HOST_SUFFIXES
+    ):
+        return user_agent
+    email = contact_email or os.environ.get(CONTACT_EMAIL_ENV_VAR)
+    if not email:
+        log.warning(
+            "cartograph: %s asks automated clients to declare a contact "
+            "in the User-Agent; set %s (or ProbeOptions.contact_email) "
+            "to comply. Proceeding with the default UA.",
+            host,
+            CONTACT_EMAIL_ENV_VAR,
+        )
+        return user_agent
+    return (
+        f"cartograph-ai/{__version__} {email} "
+        "(+https://github.com/AgentXaGent/cartograph-ai)"
+    )
+
+
+class _HostPacer:
+    """Per-host politeness pacing for the requests inside one probe.
+
+    Defaults: 1 req/sec on ``.gov`` hosts; any host that answers 429 or
+    503 gets paced at 1 req/sec for the remainder of the probe. A probe
+    makes at most ~5 requests (page, robots, up to 3 sitemaps) so the
+    worst-case cost is a few seconds. Configurable via ``polite_delay``.
+    """
+
+    def __init__(self, polite_delay: Optional[float] = None) -> None:
+        self._configured = polite_delay
+        self._throttled_hosts: set[str] = set()
+        self._last_request: dict[str, float] = {}
+
+    def _delay_for(self, host: str) -> float:
+        if self._configured is not None:
+            return self._configured
+        if host in self._throttled_hosts or host.endswith(".gov"):
+            return _POLITE_DELAY_GOV_DEFAULT
+        return 0.0
+
+    def wait(self, url: str) -> None:
+        host = httpx.URL(url).host or ""
+        delay = self._delay_for(host)
+        last = self._last_request.get(host)
+        if delay > 0 and last is not None:
+            elapsed = time.monotonic() - last
+            if elapsed < delay:
+                time.sleep(delay - elapsed)
+        self._last_request[host] = time.monotonic()
+
+    def note_response(self, url: str, status: Optional[int]) -> None:
+        if status in (429, 503):
+            host = httpx.URL(url).host or ""
+            self._throttled_hosts.add(host)
 
 # Headers worth surfacing to Stage 4. Server / X-Powered-By / generator
 # headers are the highest-signal ones; we also keep Content-Type for
@@ -70,6 +173,8 @@ def probe_http(
     timeout: float = 10.0,
     max_redirects: int = 5,
     user_agent: str = DEFAULT_USER_AGENT,
+    contact_email: Optional[str] = None,
+    polite_delay: Optional[float] = None,
 ) -> dict[str, Any]:
     """Run Stage 1 against ``url`` and return a structured findings dict.
 
@@ -80,7 +185,14 @@ def probe_http(
             disposed inside the call.
         timeout: Per-request timeout in seconds.
         max_redirects: Maximum redirect hops to follow.
-        user_agent: User-Agent header value.
+        user_agent: User-Agent header value. Hosts with a published
+            declared-UA convention (SEC) get the contact email appended
+            unless a custom ``user_agent`` was supplied (issue #13).
+        contact_email: Operator contact for declared-UA conventions.
+            Falls back to the ``CARTOGRAPH_CONTACT_EMAIL`` env var.
+        polite_delay: Seconds between requests to the same host. ``None``
+            means automatic: 1 req/sec on ``.gov`` hosts and on any host
+            that returns 429/503 during the probe; no pacing elsewhere.
 
     Returns:
         A dict with keys ``url``, ``final_url``, ``status``,
@@ -89,13 +201,19 @@ def probe_http(
         success and carries a short string when the probe could not
         reach the target at all.
     """
+    effective_ua = user_agent_for(
+        url, user_agent=user_agent, contact_email=contact_email
+    )
+    request_headers = {"User-Agent": effective_ua, **DEFAULT_ACCEPT_HEADERS}
+    pacer = _HostPacer(polite_delay)
+
     owns_client = client is None
     if client is None:
         client = httpx.Client(
             timeout=httpx.Timeout(timeout, connect=min(timeout, 5.0)),
             follow_redirects=True,
             max_redirects=max_redirects,
-            headers={"User-Agent": user_agent},
+            headers=request_headers,
         )
 
     findings: dict[str, Any] = {
@@ -115,10 +233,12 @@ def probe_http(
 
     try:
         try:
-            response = client.get(url)
+            pacer.wait(url)
+            response = client.get(url, headers=request_headers)
         except httpx.HTTPError as exc:
             findings["error"] = f"{type(exc).__name__}: {exc}"
             return findings
+        pacer.note_response(url, response.status_code)
 
         findings["final_url"] = str(response.url)
         findings["status"] = response.status_code
@@ -137,7 +257,9 @@ def probe_http(
         findings["headers"] = _collect_interesting_headers(response.headers)
 
         base = _origin(str(response.url))
-        findings["robots_txt"] = _fetch_robots(client, base)
+        findings["robots_txt"] = _fetch_robots(
+            client, base, headers=request_headers, pacer=pacer
+        )
 
         sitemap_candidates = list(findings["robots_txt"].get("sitemap_urls") or [])
         if not sitemap_candidates:
@@ -146,7 +268,9 @@ def probe_http(
                 f"{base}/sitemap_index.xml",
             ]
 
-        findings["sitemaps"] = _fetch_sitemaps(client, sitemap_candidates)
+        findings["sitemaps"] = _fetch_sitemaps(
+            client, sitemap_candidates, headers=request_headers, pacer=pacer
+        )
 
     finally:
         if owns_client:
@@ -173,7 +297,13 @@ def _collect_interesting_headers(headers: httpx.Headers) -> dict[str, str]:
     return out
 
 
-def _fetch_robots(client: httpx.Client, origin: str) -> dict[str, Any]:
+def _fetch_robots(
+    client: httpx.Client,
+    origin: str,
+    *,
+    headers: Optional[dict[str, str]] = None,
+    pacer: Optional[_HostPacer] = None,
+) -> dict[str, Any]:
     """Fetch /robots.txt and parse out Sitemap directives + a few counts.
 
     Returns a structured dict regardless of fetch outcome so the Stage 4
@@ -187,12 +317,17 @@ def _fetch_robots(client: httpx.Client, origin: str) -> dict[str, Any]:
         "user_agent_blocks": 0,
         "disallow_count": 0,
     }
+    robots_url = f"{origin}/robots.txt"
     try:
-        r = client.get(f"{origin}/robots.txt")
+        if pacer is not None:
+            pacer.wait(robots_url)
+        r = client.get(robots_url, headers=headers)
     except httpx.HTTPError as exc:
         record["fetch_error"] = f"{type(exc).__name__}: {exc}"
         return record
 
+    if pacer is not None:
+        pacer.note_response(robots_url, r.status_code)
     record["status"] = r.status_code
     if r.status_code != 200 or not r.text.strip():
         return record
@@ -210,7 +345,13 @@ def _fetch_robots(client: httpx.Client, origin: str) -> dict[str, Any]:
     return record
 
 
-def _fetch_sitemaps(client: httpx.Client, urls: list[str]) -> list[dict[str, Any]]:
+def _fetch_sitemaps(
+    client: httpx.Client,
+    urls: list[str],
+    *,
+    headers: Optional[dict[str, str]] = None,
+    pacer: Optional[_HostPacer] = None,
+) -> list[dict[str, Any]]:
     """Fetch up to ``_SITEMAP_MAX_FETCH`` sitemaps and summarize each.
 
     For nested sitemap indexes we record the child sitemap URLs but do
@@ -228,12 +369,16 @@ def _fetch_sitemaps(client: httpx.Client, urls: list[str]) -> list[dict[str, Any
 
         record: dict[str, Any] = {"url": raw, "status": None, "url_count": 0, "child_sitemap_count": 0}
         try:
-            r = client.get(raw)
+            if pacer is not None:
+                pacer.wait(raw)
+            r = client.get(raw, headers=headers)
         except httpx.HTTPError as exc:
             record["fetch_error"] = f"{type(exc).__name__}: {exc}"
             out.append(record)
             continue
 
+        if pacer is not None:
+            pacer.note_response(raw, r.status_code)
         record["status"] = r.status_code
         if r.status_code != 200:
             out.append(record)
