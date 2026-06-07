@@ -7,6 +7,7 @@ mean / total stats that go into the README economics tables.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import statistics
 from collections import defaultdict
@@ -55,19 +56,84 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    confidence:    {statistics.median(confidences):.2f} median   {statistics.mean(confidences):.2f} mean")
 
     # Per-URL agreement table.
+    #
+    # Issue #1: the top-line classification alone under-counts agreement.
+    # A model that answers `direct_api` while explicitly hedging
+    # "fall back to static_html if the endpoint 404s" in limitations is
+    # not in real disagreement with a model that answered `static_html`
+    # (the graphql.org case from the v0.1.0 benchmark). Three markers:
+    #
+    #   OK     identical top-line classifications
+    #   HEDGED top-lines differ, but every disagreeing classification is
+    #          named in another record's limitations/reasoning hedge -
+    #          counted as agreement
+    #   DIFF   real disagreement
     print("\nClassification agreement across models")
     print("-" * 72)
-    by_url: dict[str, dict[str, str]] = defaultdict(dict)
+    by_url: dict[str, dict[str, dict]] = defaultdict(dict)
     for r in records:
         model = r.get("model_actual") or r.get("model_requested")
-        by_url[r["url"]][model] = r.get("classification", "?")
-    for url, model_to_cls in sorted(by_url.items()):
+        by_url[r["url"]][model] = r
+    ok = hedged = diff = 0
+    for url, model_to_rec in sorted(by_url.items()):
+        model_to_cls = {m: rec.get("classification", "?") for m, rec in model_to_rec.items()}
         labels = [f"{m.split('-')[1]}={c}" for m, c in sorted(model_to_cls.items())]
-        same = len(set(model_to_cls.values())) == 1
-        marker = "OK" if same else "DIFF"
-        print(f"  [{marker}] {url:<50s} {' | '.join(labels)}")
+        if len(set(model_to_cls.values())) == 1:
+            marker = "OK"
+            ok += 1
+        elif _hedged_agreement(model_to_rec):
+            marker = "HEDGED"
+            hedged += 1
+        else:
+            marker = "DIFF"
+            diff += 1
+        print(f"  [{marker:<6s}] {url:<50s} {' | '.join(labels)}")
+
+    total = ok + hedged + diff
+    if total:
+        print(
+            f"\n  honest agreement: {ok + hedged}/{total} "
+            f"({ok} identical, {hedged} hedged-equivalent, {diff} real disagreement)"
+        )
 
     return 0
+
+
+def _hedged_agreement(model_to_rec: dict[str, dict]) -> bool:
+    """True when differing top-line classifications are hedge-covered.
+
+    Two classifications are hedge-equivalent when at least one side
+    names the other's answer in its own limitations or reasoning. The
+    canonical case (issue #1, graphql.org): Sonnet answered
+    `direct_api` with "fall back to static html parsing" in
+    limitations; Opus answered `static_html`. Sonnet's hedge covers
+    Opus's top-line, so the two are not in real disagreement.
+
+    For every *pair* of differing classifications, coverage in either
+    direction is required. Any uncovered pair means real disagreement.
+    """
+    hedge_text: dict[str, str] = {}
+    for model, rec in model_to_rec.items():
+        parts = list(rec.get("limitations") or [])
+        if rec.get("reasoning"):
+            parts.append(rec["reasoning"])
+        hedge_text[model] = " ".join(parts).lower()
+
+    def _mentions(model: str, cls: str) -> bool:
+        text = hedge_text[model]
+        return cls.lower() in text or cls.replace("_", " ").lower() in text
+
+    cls_to_models: dict[str, list[str]] = {}
+    for model, rec in model_to_rec.items():
+        cls_to_models.setdefault(rec.get("classification", "?"), []).append(model)
+
+    for c1, c2 in itertools.combinations(sorted(cls_to_models), 2):
+        covered = any(_mentions(m, c2) for m in cls_to_models[c1]) or any(
+            _mentions(m, c1) for m in cls_to_models[c2]
+        )
+        if not covered:
+            return False
+    return True
 
 
 if __name__ == "__main__":

@@ -22,6 +22,8 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ### Fixed
 
+- `bench/summarize.py` agreement metric no longer counts hedge-equivalent answers as disagreement (#1). When models' top-line classifications differ, the summary now checks each side's `limitations` and `reasoning` for an explicit hedge naming the other's answer; covered pairs print as `HEDGED` and count toward an `honest agreement` total alongside `OK`. The v0.1.0 benchmark's lone "disagreement" (graphql.org: Sonnet `direct_api` with an explicit `static_html` fallback vs Opus `static_html`) was this exact case. `bench/run_benchmark.py` now records the `limitations` text per probe to support the check.
+
 - `extraction_strategy.estimated_requests` now accepts negative sentinel values from Claude (e.g., `-1` on blocked targets) by coercing them to `null`, and the field is `Optional[int]` with `null` meaning unknown/indeterminate. Previously the Pydantic `ge=0` bound rejected the whole response. Schema note: JSON consumers should treat `estimated_requests: null` as "no honest estimate exists." (#3)
 
 ### Added

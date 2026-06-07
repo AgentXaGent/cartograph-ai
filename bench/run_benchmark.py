@@ -86,6 +86,7 @@ def _run_one(url: str, model: str, http_client: httpx.Client, anthropic_client) 
         "extraction_method": None,
         "endpoints_discovered_count": 0,
         "limitations_count": 0,
+        "limitations": [],
         "stripped_endpoints": [],
         "error": None,
     }
@@ -143,6 +144,7 @@ def _run_one(url: str, model: str, http_client: httpx.Client, anthropic_client) 
     record["subcategory"] = report.response.extraction_strategy.method
     record["endpoints_discovered_count"] = len(stage2.get("api_endpoints", []))
     record["limitations_count"] = len(cr.response.limitations)
+    record["limitations"] = list(cr.response.limitations)
     record["status"] = "ok"
     return record
 
