@@ -173,6 +173,12 @@ def main(
     timeout: float = typer.Option(
         10.0, "--timeout", help="Per-request timeout in seconds."
     ),
+    no_preflight: bool = typer.Option(
+        False,
+        "--no-preflight",
+        help="Skip the Anthropic key preflight check (one ~$0.00001 "
+        "API ping before any probe traffic).",
+    ),
     show_version: bool = typer.Option(
         False,
         "--version",
@@ -197,6 +203,7 @@ def main(
                 debug=debug,
                 model=model,
                 timeout=timeout,
+                preflight_key_check=not no_preflight,
             ),
         )
     except CartographError as exc:

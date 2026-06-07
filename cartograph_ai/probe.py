@@ -24,6 +24,7 @@ from cartograph_ai.exceptions import (
     CartographError,
     HTMLAnalysisError,
     LowConfidenceError,
+    PreflightKeyError,
 )
 from cartograph_ai.schema import (
     Classification,
@@ -67,6 +68,10 @@ class ProbeOptions:
         retry_on_stage1_failure: If True, Stage 1 transient errors get
             one retry with a half-second backoff before the orchestrator
             raises.
+        preflight_key_check: If True (default), validate the Anthropic
+            API key before any HTTP request is sent to the probe target
+            (issue #18). A bad key fails fast with PreflightKeyError and
+            never touches the target host.
     """
 
     strict: bool = False
@@ -76,6 +81,7 @@ class ProbeOptions:
     timeout: float = 10.0
     user_agent: str = DEFAULT_USER_AGENT
     retry_on_stage1_failure: bool = True
+    preflight_key_check: bool = True
 
 
 def probe(
@@ -112,6 +118,10 @@ def probe(
     opts = options or ProbeOptions()
     if anthropic_client is None:
         anthropic_client = _default_anthropic_client()
+
+    # ---- Preflight: validate the key before touching the target ------
+    if opts.preflight_key_check:
+        _preflight_key_check(anthropic_client, model=opts.model)
 
     stages_completed: list[str] = []
     stages_skipped: list[str] = ["js_execution"]
@@ -219,6 +229,43 @@ def probe(
 # ---------------- Helpers ---------------------------------------------
 
 
+def _preflight_key_check(client: Any, *, model: str) -> None:
+    """Validate the Anthropic key before any probe traffic (issue #18).
+
+    Two layers, cheapest first:
+
+    1. Shape check on ``client.api_key`` when the attribute exists:
+       an obviously malformed key (wrong prefix, too short) fails
+       without any network traffic at all.
+    2. A single throwaway ``messages.create`` call with ``max_tokens=1``
+       (~50ms, ~$0.00001). A 401 surfaces here, against Anthropic,
+       instead of after Stages 1-2 have already hit the target host.
+
+    Raises:
+        PreflightKeyError: The key is missing, malformed, or rejected.
+    """
+    api_key = getattr(client, "api_key", None)
+    if isinstance(api_key, str):
+        if not api_key.startswith("sk-ant-") or len(api_key) < 20:
+            raise PreflightKeyError(
+                "Anthropic API key failed the shape check (expected an "
+                "'sk-ant-' prefix). No probe traffic was sent. Check "
+                "ANTHROPIC_API_KEY."
+            )
+
+    try:
+        client.messages.create(
+            model=model,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+    except Exception as exc:
+        raise PreflightKeyError(
+            "Anthropic API key failed preflight validation; no probe "
+            f"traffic was sent. Underlying error: {type(exc).__name__}: {exc}"
+        ) from exc
+
+
 def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeResult:
     """Build the synthetic ``probe_unreachable`` result for Stage 1 failures.
 
@@ -290,7 +337,16 @@ def _default_anthropic_client() -> Any:
             "The anthropic package is required to run the probe. "
             "Install with 'pip install cartograph-ai' or pass a custom client."
         ) from exc
-    return Anthropic()
+    try:
+        return Anthropic()
+    except Exception as exc:
+        # The SDK raises at construction when the key is missing. Wrap it
+        # so the failure is typed and clearly pre-traffic (issue #18).
+        raise PreflightKeyError(
+            "Could not construct the Anthropic client (is "
+            "ANTHROPIC_API_KEY set?). No probe traffic was sent. "
+            f"Underlying error: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def _run_stage1(

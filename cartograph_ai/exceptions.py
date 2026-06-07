@@ -69,6 +69,16 @@ class ProbeTimeoutError(CartographError):
     """Probe target was unstable across retries; no clean signal was obtained."""
 
 
+class PreflightKeyError(CartographError):
+    """The Anthropic API key failed preflight validation (issue #18).
+
+    Raised before any HTTP request is sent to a probe target. A
+    misconfigured key must never burn request budget (or operator IP
+    reputation) against the very sites being probed. The cartograph
+    contract is: if Stage 1 fires, the key is good.
+    """
+
+
 # Output / validation failures ---------------------------------------------
 
 class OutputValidationError(CartographError):

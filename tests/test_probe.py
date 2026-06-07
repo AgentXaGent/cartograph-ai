@@ -14,6 +14,7 @@ from cartograph_ai import (
     HTMLAnalysisError,
     HTTPProbeError,
     LowConfidenceError,
+    PreflightKeyError,
     ProbeOptions,
     ProbeResult,
     probe,
@@ -432,3 +433,84 @@ def test_stage1_retry_succeeds_after_transient_error():
         http_client.close()
 
     assert result.probe_stages_completed == ["http", "html_analysis", "claude_classify"]
+
+
+# ---------------- Preflight key validation (issue #18) -----------------
+
+
+class _FailingMessagesEndpoint:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        raise RuntimeError("401 authentication_error: invalid x-api-key")
+
+
+class _FailingAnthropic:
+    def __init__(self):
+        self.messages = _FailingMessagesEndpoint()
+
+
+@respx.mock
+def test_preflight_bad_key_blocks_all_probe_traffic():
+    # Issue #18: a bad key must fail before any HTTP request reaches the
+    # target host.
+    route = respx.get("https://sasaki.com/").mock(
+        return_value=httpx.Response(200, content=SASAKI_HTML)
+    )
+    client = _FailingAnthropic()
+    http_client = httpx.Client(timeout=5.0)
+    try:
+        with pytest.raises(PreflightKeyError):
+            probe(
+                "https://sasaki.com/",
+                anthropic_client=client,
+                http_client=http_client,
+            )
+    finally:
+        http_client.close()
+
+    assert not route.called
+    assert len(client.messages.calls) == 1  # the ping, nothing else
+
+
+def test_preflight_shape_check_fails_without_any_call():
+    class _ShapedClient:
+        api_key = "not-a-real-key"
+
+        def __init__(self):
+            self.messages = _FailingMessagesEndpoint()
+
+    client = _ShapedClient()
+    with pytest.raises(PreflightKeyError):
+        probe("https://sasaki.com/", anthropic_client=client)
+
+    # The shape check fired before the ping.
+    assert client.messages.calls == []
+
+
+@respx.mock
+def test_preflight_can_be_disabled():
+    respx.get("https://sasaki.com/").mock(
+        return_value=httpx.Response(200, content=SASAKI_HTML)
+    )
+    respx.get("https://sasaki.com/robots.txt").mock(return_value=httpx.Response(404))
+    respx.get("https://sasaki.com/sitemap.xml").mock(return_value=httpx.Response(404))
+    respx.get("https://sasaki.com/sitemap_index.xml").mock(return_value=httpx.Response(404))
+
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text=_claude_response_text())]))
+    http_client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        result = probe(
+            "https://sasaki.com/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(preflight_key_check=False),
+        )
+    finally:
+        http_client.close()
+
+    # Exactly one model call: the classification, no ping.
+    assert len(client.messages.calls) == 1
+    assert result.classification.category == "direct_api"

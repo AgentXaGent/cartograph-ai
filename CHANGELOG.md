@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Added (continued)
+
+- Preflight API-key validation before any probe traffic: a shape check on the key plus a single `max_tokens=1` ping to the Anthropic API (~50ms, ~$0.00001). A bad or missing key now raises `PreflightKeyError` before any HTTP request touches the target host, instead of burning Stages 1-2 traffic (and operator IP reputation) on a run that cannot classify. Contract: if Stage 1 fires, the key is good. Opt out with `--no-preflight` / `ProbeOptions(preflight_key_check=False)`. (#18)
+
 ### Changed
 
 - Stage 1 network failures (timeout, connection refused, DNS) no longer raise `HTTPProbeError` from `probe()` / exit code 1 from the CLI. They return a structured `probe_unreachable` result: `classification.category = "probe_unreachable"`, subcategory `stage_1_timeout` | `stage_1_refused` | `stage_1_dns_failure` (fallback `stage_1_error`), confidence 0.0, the error preserved in `reasoning` and `limitations`, and `specifics.retry_after_sec` for retry-queue routing. Schema notes: `probe_unreachable` added to the category enum; `extraction_strategy.requires_browser` and `recommended_tool` are now nullable (null only on synthetic results). `HTTPProbeError` is retained for back-compat but no longer raised by `probe()`. (#8)
