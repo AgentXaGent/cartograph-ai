@@ -123,6 +123,11 @@ def _print_rich(result: ProbeResult, *, verbose: bool) -> None:
         for lim in result.limitations:
             stdout_console.print(f"      - [yellow]{lim}[/yellow]")
 
+    if verbose and result.hallucinations_stripped:
+        stdout_console.print("    [magenta]Hallucinations stripped:[/magenta]")
+        for url in result.hallucinations_stripped:
+            stdout_console.print(f"      - [magenta]{url}[/magenta]")
+
     if verbose:
         stdout_console.print()
         stdout_console.print(f"    [dim]model: {result.model}[/dim]")

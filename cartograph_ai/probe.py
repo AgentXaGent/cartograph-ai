@@ -204,6 +204,7 @@ def probe(
         probe_stages_skipped=stages_skipped,
         skip_reason=skip_reason,
         limitations=list(cleaned_response.limitations) + extra_limitations,
+        hallucinations_stripped=list(report.stripped_endpoints),
         low_confidence_warning=low_confidence,
     )
 

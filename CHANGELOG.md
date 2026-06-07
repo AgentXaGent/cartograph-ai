@@ -16,6 +16,8 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ### Added
 
+- `hallucinations_stripped` is now a first-class field on `ProbeResult` / `--json` output (always present, defaults to `[]`) and renders as its own section in `--verbose` text output. Previously the strip was only visible as a generic note in `limitations` and a stderr log line. (#10)
+
 - Published to PyPI: `pip install cartograph-ai` now resolves from the public registry. Project page: https://pypi.org/project/cartograph-ai/.
 - `docs/real-world-effectiveness.md` — log of production sessions with measured outcomes. Three sessions to date (64 URLs, ~$0.97 spend, 83% classification success), with qualitative insights from each session that shape v0.2 priorities.
 

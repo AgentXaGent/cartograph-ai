@@ -324,6 +324,8 @@ def test_hallucinated_endpoint_is_stripped_and_recorded():
     assert result.extraction_strategy.specifics == {"app_id": "AHNZ21XTZ6"}
     # The strip is surfaced in limitations.
     assert any("stripped" in lim for lim in result.limitations)
+    # And as a first-class field (issue #10).
+    assert result.hallucinations_stripped == ["https://hallucinated.invalid/api/x"]
 
 
 # ---------------- Retry behaviour --------------------------------------

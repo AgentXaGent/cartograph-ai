@@ -183,4 +183,13 @@ class ProbeResult(BaseModel):
     probe_stages_skipped: list[ProbeStage] = Field(default_factory=list)
     skip_reason: Optional[str] = None
     limitations: list[str] = Field(default_factory=list)
+    hallucinations_stripped: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Endpoint URLs the model recommended that did not appear "
+            "verbatim in the probe input and were removed by the "
+            "validation cross-reference. Non-empty means the model "
+            "invented at least one endpoint for this probe."
+        ),
+    )
     low_confidence_warning: bool = False

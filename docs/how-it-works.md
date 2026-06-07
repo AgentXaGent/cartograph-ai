@@ -201,7 +201,9 @@ What cartograph hands back to the caller (CLI or library):
   "probe_stages_completed": ["http", "html_analysis", "claude_classify"],
   "probe_stages_skipped": ["js_execution"],
   "skip_reason": "Clean API discovered in stage 2; stage 3 unnecessary",
-  "limitations": []
+  "limitations": [],
+  "hallucinations_stripped": [],
+  "low_confidence_warning": false
 }
 ```
 

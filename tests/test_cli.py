@@ -30,6 +30,7 @@ def _make_probe_result(
     confidence: float = 0.94,
     low_warning: bool = False,
     limitations: list | None = None,
+    hallucinations_stripped: list | None = None,
 ) -> ProbeResult:
     return ProbeResult(
         url="https://sasaki.com/projects",
@@ -58,6 +59,7 @@ def _make_probe_result(
         probe_stages_skipped=["js_execution"],
         skip_reason="Phase 1 only",
         limitations=limitations or [],
+        hallucinations_stripped=hallucinations_stripped or [],
         low_confidence_warning=low_warning,
     )
 
@@ -125,6 +127,48 @@ def test_rich_output_verbose_includes_stage_trace(monkeypatch):
     assert "model:" in result.stdout
     assert "stages:" in result.stdout
     assert "probe_timestamp:" in result.stdout
+
+
+def test_rich_output_verbose_lists_hallucinations_stripped(monkeypatch):
+    # Issue #10: stripped endpoints surface in verbose text output.
+    monkeypatch.setattr(
+        "cartograph_ai.cli.probe",
+        lambda url, options: _make_probe_result(
+            hallucinations_stripped=["https://hallucinated.invalid/api/x"],
+        ),
+    )
+    result = runner.invoke(app, ["https://sasaki.com/projects", "--verbose"])
+    assert result.exit_code == 0
+    assert "Hallucinations stripped:" in result.stdout
+    assert "hallucinated.invalid" in result.stdout
+
+
+def test_rich_output_non_verbose_omits_hallucination_section(monkeypatch):
+    monkeypatch.setattr(
+        "cartograph_ai.cli.probe",
+        lambda url, options: _make_probe_result(
+            hallucinations_stripped=["https://hallucinated.invalid/api/x"],
+        ),
+    )
+    result = runner.invoke(app, ["https://sasaki.com/projects"])
+    assert result.exit_code == 0
+    assert "Hallucinations stripped:" not in result.stdout
+
+
+def test_json_output_includes_hallucinations_stripped(monkeypatch):
+    # Issue #10: the field is always present in JSON output.
+    monkeypatch.setattr(
+        "cartograph_ai.cli.probe",
+        lambda url, options: _make_probe_result(
+            hallucinations_stripped=["https://hallucinated.invalid/api/x"],
+        ),
+    )
+    result = runner.invoke(app, ["https://sasaki.com/projects", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["hallucinations_stripped"] == [
+        "https://hallucinated.invalid/api/x"
+    ]
 
 
 def test_rich_output_shows_low_confidence_warning(monkeypatch):
