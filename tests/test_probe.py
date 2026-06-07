@@ -491,6 +491,37 @@ def test_preflight_shape_check_fails_without_any_call():
 
 
 @respx.mock
+def test_preflight_runs_once_per_client(monkeypatch):
+    # Ghost review amendment: key validation is a global precondition.
+    # The second probe with the same client must not ping again.
+    for host in ("sasaki.com", "other.example.com"):
+        respx.get(f"https://{host}/").mock(
+            return_value=httpx.Response(200, content=SASAKI_HTML)
+        )
+        respx.get(f"https://{host}/robots.txt").mock(return_value=httpx.Response(404))
+        respx.get(f"https://{host}/sitemap.xml").mock(return_value=httpx.Response(404))
+        respx.get(f"https://{host}/sitemap_index.xml").mock(
+            return_value=httpx.Response(404)
+        )
+
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text=_claude_response_text())]))
+    http_client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        probe("https://sasaki.com/", anthropic_client=client, http_client=http_client)
+        probe(
+            "https://other.example.com/",
+            anthropic_client=client,
+            http_client=http_client,
+        )
+    finally:
+        http_client.close()
+
+    # 3 calls total: 1 preflight ping + 2 classifications. Without the
+    # cache it would be 4 (2N).
+    assert len(client.messages.calls) == 3
+
+
+@respx.mock
 def test_preflight_can_be_disabled():
     respx.get("https://sasaki.com/").mock(
         return_value=httpx.Response(200, content=SASAKI_HTML)

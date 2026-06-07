@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as _dt
 import logging
 import time
+import weakref
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -237,10 +238,18 @@ def probe(
 # ---------------- Helpers ---------------------------------------------
 
 
+_preflight_validated: "weakref.WeakSet[Any]" = weakref.WeakSet()
+"""Clients that already passed preflight in this process. Key validation
+is a global precondition, not a per-probe dependency: one ping per
+client per process, not one per probe. Keeps batch runs at N+1 API
+requests instead of 2N."""
+
+
 def _preflight_key_check(client: Any, *, model: str) -> None:
     """Validate the Anthropic key before any probe traffic (issue #18).
 
-    Two layers, cheapest first:
+    Runs once per client per process; subsequent probes with the same
+    client skip both layers. Two layers, cheapest first:
 
     1. Shape check on ``client.api_key`` when the attribute exists:
        an obviously malformed key (wrong prefix, too short) fails
@@ -252,6 +261,12 @@ def _preflight_key_check(client: Any, *, model: str) -> None:
     Raises:
         PreflightKeyError: The key is missing, malformed, or rejected.
     """
+    try:
+        if client in _preflight_validated:
+            return
+    except TypeError:  # pragma: no cover - non-weakrefable exotic client
+        pass
+
     api_key = getattr(client, "api_key", None)
     if isinstance(api_key, str):
         if not api_key.startswith("sk-ant-") or len(api_key) < 20:
@@ -272,6 +287,11 @@ def _preflight_key_check(client: Any, *, model: str) -> None:
             "Anthropic API key failed preflight validation; no probe "
             f"traffic was sent. Underlying error: {type(exc).__name__}: {exc}"
         ) from exc
+
+    try:
+        _preflight_validated.add(client)
+    except TypeError:  # pragma: no cover - non-weakrefable exotic client
+        pass
 
 
 def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeResult:

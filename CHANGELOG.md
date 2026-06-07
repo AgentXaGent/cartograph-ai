@@ -14,6 +14,7 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 - Honest declared identity hardening (#13): browser-plausible `Accept` / `Accept-Language` headers on all Stage 1 requests (disclosure-compatible; removes a needless tell several gov CDNs reject on), per-domain declared-UA convention support (SEC: `cartograph-ai/{version} contact@email (+repo)` per their published automation policy; contact from `--contact-email` / `ProbeOptions.contact_email` / `CARTOGRAPH_CONTACT_EMAIL`), and per-host politeness pacing (default 1 req/sec on `.gov` hosts and on any host answering 429/503 during the probe; configurable via `ProbeOptions.polite_delay`). The default User-Agent remains the honest `cartograph-ai/{version} (+repo)` string; custom UAs are never overridden. Hard doctrine unchanged: no impersonation, ever.
 
+- Preflight key validation runs once per client per process (cross-check review amendment): batch runs cost N+1 API requests, not 2N. Key validation is a global precondition, not a per-probe dependency.
 - Preflight API-key validation before any probe traffic: a shape check on the key plus a single `max_tokens=1` ping to the Anthropic API (~50ms, ~$0.00001). A bad or missing key now raises `PreflightKeyError` before any HTTP request touches the target host, instead of burning Stages 1-2 traffic (and operator IP reputation) on a run that cannot classify. Contract: if Stage 1 fires, the key is good. Opt out with `--no-preflight` / `ProbeOptions(preflight_key_check=False)`. (#18)
 
 ### Changed
