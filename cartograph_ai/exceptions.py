@@ -22,10 +22,11 @@ class CartographError(Exception):
 class HTTPProbeError(CartographError):
     """Stage 1 (HTTP probe) failed in a way the orchestrator cannot recover from.
 
-    Used for unresolvable DNS, persistent connection refusal, or a probe
-    target that returned no usable response across the configured retries.
-    Transient single-attempt failures are retried internally and do not
-    surface as this exception.
+    Since issue #8 landed, ``probe()`` no longer raises this for network
+    failures; it returns a structured ``probe_unreachable`` result
+    instead. The class is retained so existing ``except HTTPProbeError``
+    call sites keep working and for use by lower-level callers of
+    ``probe_http`` who want a typed error to raise themselves.
     """
 
 

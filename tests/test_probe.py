@@ -168,20 +168,96 @@ def test_probe_endpoints_discovered_populated_from_stage2():
 
 
 @respx.mock
-def test_probe_raises_http_probe_error_on_unreachable():
+def test_probe_unreachable_returns_structured_result():
+    # Issue #8: network failures produce a probe_unreachable result, not
+    # an exception.
     respx.get("https://nope.invalid/").mock(side_effect=httpx.ConnectError("nope"))
     client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
     http_client = httpx.Client(timeout=5.0)
     try:
-        with pytest.raises(HTTPProbeError):
-            probe(
-                "https://nope.invalid/",
-                anthropic_client=client,
-                http_client=http_client,
-                options=ProbeOptions(retry_on_stage1_failure=False),
-            )
+        result = probe(
+            "https://nope.invalid/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(retry_on_stage1_failure=False),
+        )
     finally:
         http_client.close()
+
+    assert result.classification.category == "probe_unreachable"
+    assert result.classification.subcategory == "stage_1_refused"
+    assert result.classification.confidence == 0.0
+    assert "ConnectError" in result.classification.reasoning
+    assert result.extraction_strategy.method == "manual"
+    assert result.extraction_strategy.requires_browser is None
+    assert result.extraction_strategy.recommended_tool is None
+    assert result.probe_stages_completed == []
+    assert "claude_classify" in result.probe_stages_skipped
+    assert result.extraction_strategy.specifics["reason"] == "network unreachable"
+
+
+@respx.mock
+def test_probe_unreachable_timeout_subcategory():
+    respx.get("https://slow.invalid/").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
+    http_client = httpx.Client(timeout=5.0)
+    try:
+        result = probe(
+            "https://slow.invalid/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(retry_on_stage1_failure=False),
+        )
+    finally:
+        http_client.close()
+
+    assert result.classification.category == "probe_unreachable"
+    assert result.classification.subcategory == "stage_1_timeout"
+
+
+@respx.mock
+def test_probe_unreachable_dns_subcategory():
+    respx.get("https://noname.invalid/").mock(
+        side_effect=httpx.ConnectError(
+            "[Errno -2] Name or service not known"
+        )
+    )
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
+    http_client = httpx.Client(timeout=5.0)
+    try:
+        result = probe(
+            "https://noname.invalid/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(retry_on_stage1_failure=False),
+        )
+    finally:
+        http_client.close()
+
+    assert result.classification.subcategory == "stage_1_dns_failure"
+
+
+@respx.mock
+def test_probe_unreachable_bypasses_strict_mode():
+    # A 0.0-confidence synthetic result must not trip LowConfidenceError;
+    # it is a network-layer report, not a weak model judgment.
+    respx.get("https://nope.invalid/").mock(side_effect=httpx.ConnectError("nope"))
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
+    http_client = httpx.Client(timeout=5.0)
+    try:
+        result = probe(
+            "https://nope.invalid/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(strict=True, retry_on_stage1_failure=False),
+        )
+    finally:
+        http_client.close()
+
+    assert result.classification.category == "probe_unreachable"
+    assert result.low_confidence_warning is False
 
 
 @respx.mock

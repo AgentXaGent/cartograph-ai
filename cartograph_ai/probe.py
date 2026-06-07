@@ -23,7 +23,6 @@ from cartograph_ai.exceptions import (
     AuthWalledError,
     CartographError,
     HTMLAnalysisError,
-    HTTPProbeError,
     LowConfidenceError,
 )
 from cartograph_ai.schema import (
@@ -99,10 +98,11 @@ def probe(
 
     Returns:
         A ``ProbeResult`` matching the schema in
-        ``docs/how-it-works.md``.
+        ``docs/how-it-works.md``. If Stage 1 cannot reach the target
+        across retries, this is a structured ``probe_unreachable``
+        result (issue #8) rather than an exception.
 
     Raises:
-        HTTPProbeError: Stage 1 could not reach the target across retries.
         AuthWalledError: Target requires authentication (401).
         HTMLAnalysisError: Stage 2 had no HTML to walk.
         ClassificationError: Stage 4 failed to parse the model response.
@@ -120,10 +120,17 @@ def probe(
 
     # ---- Stage 1: HTTP probe -----------------------------------------
     stage1 = _run_stage1(url, http_client=http_client, opts=opts)
-    stages_completed.append("http")
 
     if stage1["error"]:
-        raise HTTPProbeError(f"Stage 1 failed for {url}: {stage1['error']}")
+        # Issue #8: network-layer failures are information, not errors.
+        # Return a structured probe_unreachable result so callers can
+        # route to retry queues or manual review without parsing
+        # exception text.
+        log.warning(
+            "cartograph Stage 1 unreachable for %s: %s", url, stage1["error"]
+        )
+        return _unreachable_result(url, error=stage1["error"], opts=opts)
+    stages_completed.append("http")
 
     status = stage1["status"]
     if status == 401:
@@ -210,6 +217,66 @@ def probe(
 
 
 # ---------------- Helpers ---------------------------------------------
+
+
+def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeResult:
+    """Build the synthetic ``probe_unreachable`` result for Stage 1 failures.
+
+    No Claude call is made; confidence is 0.0 by construction and the
+    error string is preserved in ``classification.reasoning`` and
+    ``limitations``. Subcategory taxonomy per issue #8:
+    ``stage_1_timeout`` | ``stage_1_refused`` | ``stage_1_dns_failure``,
+    with ``stage_1_error`` as the fallback for other network failures.
+    """
+    return ProbeResult(
+        url=url,
+        probe_timestamp=_dt.datetime.now(_dt.timezone.utc),
+        model="none (stage 4 not reached)",
+        classification=Classification(
+            category="probe_unreachable",
+            subcategory=_unreachable_subcategory(error),
+            confidence=0.0,
+            reasoning=f"Stage 1 HTTP probe failed: {error}",
+        ),
+        endpoints_discovered=[],
+        extraction_strategy=ExtractionStrategy(
+            method="manual",
+            requires_browser=None,
+            estimated_requests=None,
+            recommended_tool=None,
+            specifics={
+                "reason": "network unreachable",
+                "retry_after_sec": 60,
+            },
+        ),
+        probe_stages_completed=[],
+        probe_stages_skipped=["html_analysis", "js_execution", "claude_classify"],
+        skip_reason="Stage 1 HTTP probe failed; downstream stages skipped.",
+        limitations=[
+            f"Stage 1 HTTP probe failed: {error}. No content-layer "
+            "evidence exists for this URL; the classification is a "
+            "network-layer report, not a content judgment."
+        ],
+        low_confidence_warning=False,
+    )
+
+
+def _unreachable_subcategory(error: str) -> str:
+    """Map an httpx error string to the issue #8 subcategory taxonomy."""
+    lowered = error.lower()
+    if "timeout" in lowered:
+        return "stage_1_timeout"
+    if (
+        "getaddrinfo" in lowered
+        or "name or service not known" in lowered
+        or "name resolution" in lowered
+        or "nodename" in lowered
+        or "no address associated" in lowered
+    ):
+        return "stage_1_dns_failure"
+    if "refused" in lowered or "connecterror" in lowered:
+        return "stage_1_refused"
+    return "stage_1_error"
 
 
 def _default_anthropic_client() -> Any:

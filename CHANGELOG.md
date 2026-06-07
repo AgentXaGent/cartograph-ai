@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Changed
+
+- Stage 1 network failures (timeout, connection refused, DNS) no longer raise `HTTPProbeError` from `probe()` / exit code 1 from the CLI. They return a structured `probe_unreachable` result: `classification.category = "probe_unreachable"`, subcategory `stage_1_timeout` | `stage_1_refused` | `stage_1_dns_failure` (fallback `stage_1_error`), confidence 0.0, the error preserved in `reasoning` and `limitations`, and `specifics.retry_after_sec` for retry-queue routing. Schema notes: `probe_unreachable` added to the category enum; `extraction_strategy.requires_browser` and `recommended_tool` are now nullable (null only on synthetic results). `HTTPProbeError` is retained for back-compat but no longer raised by `probe()`. (#8)
+
 ### Fixed
 
 - `extraction_strategy.estimated_requests` now accepts negative sentinel values from Claude (e.g., `-1` on blocked targets) by coercing them to `null`, and the field is `Optional[int]` with `null` meaning unknown/indeterminate. Previously the Pydantic `ge=0` bound rejected the whole response. Schema note: JSON consumers should treat `estimated_requests: null` as "no honest estimate exists." (#3)

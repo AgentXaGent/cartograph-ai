@@ -32,8 +32,12 @@ ClassificationCategory = Literal[
     "form_gated_bulk",
     "js_rendered_spa",
     "unknown",
+    "probe_unreachable",
 ]
-"""The six classification buckets from the published prompt."""
+"""The six classification buckets from the published prompt, plus
+``probe_unreachable`` — a synthetic category the orchestrator emits when
+Stage 1 cannot reach the target at all (issue #8). Claude never returns
+it; it is built locally without an API call."""
 
 RecommendedTool = Literal[
     "requests",
@@ -84,7 +88,12 @@ class ExtractionStrategy(BaseModel):
             "'html_parsing', 'form_post_bulk', 'browser_render'."
         )
     )
-    requires_browser: bool
+    requires_browser: Optional[bool] = Field(
+        description=(
+            "Whether the strategy needs a real browser. None on synthetic "
+            "results (probe_unreachable) where the question never arose."
+        )
+    )
     estimated_requests: Optional[int] = Field(
         default=None,
         ge=0,
@@ -94,7 +103,12 @@ class ExtractionStrategy(BaseModel):
             "the probe and no honest estimate exists)."
         ),
     )
-    recommended_tool: RecommendedTool
+    recommended_tool: Optional[RecommendedTool] = Field(
+        description=(
+            "One of the five tools from the published prompt. None on "
+            "synthetic results (probe_unreachable)."
+        )
+    )
     specifics: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("estimated_requests", mode="before")
