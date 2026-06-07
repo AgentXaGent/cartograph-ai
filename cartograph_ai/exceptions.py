@@ -12,6 +12,8 @@ specific exception type below.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class CartographError(Exception):
     """Base class for every cartograph-ai exception."""
@@ -67,6 +69,21 @@ class AntiBotDetectedError(CartographError):
 
 class ProbeTimeoutError(CartographError):
     """Probe target was unstable across retries; no clean signal was obtained."""
+
+
+class ProbeUnreachableError(CartographError):
+    """Strict mode refusing a ``probe_unreachable`` result (issue #8).
+
+    Default mode returns the structured result so pipelines can route it.
+    Strict mode is a contract: actionable intelligence or a loud failure.
+    A 0.0-confidence synthetic result is not actionable, so strict
+    callers get this exception instead. The full ``ProbeResult`` is
+    attached as ``.result`` so nothing is lost.
+    """
+
+    def __init__(self, message: str, result: "Any" = None) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 class PreflightKeyError(CartographError):

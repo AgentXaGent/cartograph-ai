@@ -20,6 +20,7 @@ from cartograph_ai.exceptions import (
     HTTPProbeError,
     LowConfidenceError,
     PreflightKeyError,
+    ProbeUnreachableError,
     OutputValidationError,
     ProbeTimeoutError,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "HTTPProbeError",
     "LowConfidenceError",
     "PreflightKeyError",
+    "ProbeUnreachableError",
     "OutputValidationError",
     "ProbeTimeoutError",
 ]

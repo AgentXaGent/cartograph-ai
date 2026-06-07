@@ -26,6 +26,7 @@ from cartograph_ai.exceptions import (
     HTMLAnalysisError,
     LowConfidenceError,
     PreflightKeyError,
+    ProbeUnreachableError,
 )
 from cartograph_ai.schema import (
     Classification,
@@ -115,9 +116,13 @@ def probe(
         A ``ProbeResult`` matching the schema in
         ``docs/how-it-works.md``. If Stage 1 cannot reach the target
         across retries, this is a structured ``probe_unreachable``
-        result (issue #8) rather than an exception.
+        result (issue #8) rather than an exception, unless ``strict``
+        is set (see Raises).
 
     Raises:
+        ProbeUnreachableError: ``strict`` was True and Stage 1 could not
+            reach the target; the structured result rides on
+            ``.result``.
         AuthWalledError: Target requires authentication (401).
         HTMLAnalysisError: Stage 2 had no HTML to walk.
         ClassificationError: Stage 4 failed to parse the model response.
@@ -148,7 +153,19 @@ def probe(
         log.warning(
             "cartograph Stage 1 unreachable for %s: %s", url, stage1["error"]
         )
-        return _unreachable_result(url, error=stage1["error"], opts=opts)
+        unreachable = _unreachable_result(url, error=stage1["error"], opts=opts)
+        if opts.strict:
+            # Strict mode is a contract: actionable intelligence or a
+            # loud failure. A synthetic 0.0-confidence result is not
+            # actionable, so strict callers get a typed exception with
+            # the full result attached (cross-check review amendment).
+            raise ProbeUnreachableError(
+                f"Stage 1 HTTP probe failed for {url}: {stage1['error']} "
+                "(strict mode refuses probe_unreachable results; the "
+                "structured result is attached as .result)",
+                result=unreachable,
+            )
+        return unreachable
     stages_completed.append("http")
 
     status = stage1["status"]

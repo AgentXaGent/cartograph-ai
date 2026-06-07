@@ -16,6 +16,7 @@ from cartograph_ai import (
     LowConfidenceError,
     PreflightKeyError,
     ProbeOptions,
+    ProbeUnreachableError,
     ProbeResult,
     probe,
 )
@@ -241,9 +242,31 @@ def test_probe_unreachable_dns_subcategory():
 
 
 @respx.mock
-def test_probe_unreachable_bypasses_strict_mode():
-    # A 0.0-confidence synthetic result must not trip LowConfidenceError;
-    # it is a network-layer report, not a weak model judgment.
+def test_probe_unreachable_strict_mode_raises_with_result_attached():
+    # Strict mode contract: actionable intelligence or a loud failure.
+    # The structured result rides on the exception so nothing is lost.
+    respx.get("https://nope.invalid/").mock(side_effect=httpx.ConnectError("nope"))
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
+    http_client = httpx.Client(timeout=5.0)
+    try:
+        with pytest.raises(ProbeUnreachableError) as excinfo:
+            probe(
+                "https://nope.invalid/",
+                anthropic_client=client,
+                http_client=http_client,
+                options=ProbeOptions(strict=True, retry_on_stage1_failure=False),
+            )
+    finally:
+        http_client.close()
+
+    attached = excinfo.value.result
+    assert attached is not None
+    assert attached.classification.category == "probe_unreachable"
+    assert attached.classification.subcategory == "stage_1_refused"
+
+
+@respx.mock
+def test_probe_unreachable_default_mode_still_returns_result():
     respx.get("https://nope.invalid/").mock(side_effect=httpx.ConnectError("nope"))
     client = StubAnthropic(StubMessage(content=[StubTextBlock(text="ignored")]))
     http_client = httpx.Client(timeout=5.0)
@@ -252,7 +275,7 @@ def test_probe_unreachable_bypasses_strict_mode():
             "https://nope.invalid/",
             anthropic_client=client,
             http_client=http_client,
-            options=ProbeOptions(strict=True, retry_on_stage1_failure=False),
+            options=ProbeOptions(strict=False, retry_on_stage1_failure=False),
         )
     finally:
         http_client.close()

@@ -19,6 +19,7 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ### Changed
 
+- Strict mode (`--strict` / `ProbeOptions(strict=True)`) raises a typed `ProbeUnreachableError` on Stage 1 network failure instead of returning the synthetic `probe_unreachable` result (cross-check review amendment). Strict mode is a contract: actionable intelligence or a loud failure; a 0.0-confidence synthetic result is not actionable. The full `ProbeResult` is attached as `.result`. Default mode behavior unchanged.
 - Stage 1 network failures (timeout, connection refused, DNS) no longer raise `HTTPProbeError` from `probe()` / exit code 1 from the CLI. They return a structured `probe_unreachable` result: `classification.category = "probe_unreachable"`, subcategory `stage_1_timeout` | `stage_1_refused` | `stage_1_dns_failure` (fallback `stage_1_error`), confidence 0.0, the error preserved in `reasoning` and `limitations`, and `specifics.retry_after_sec` for retry-queue routing. Schema notes: `probe_unreachable` added to the category enum; `extraction_strategy.requires_browser` and `recommended_tool` are now nullable (null only on synthetic results). `HTTPProbeError` is retained for back-compat but no longer raised by `probe()`. (#8)
 
 ### Fixed
