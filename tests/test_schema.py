@@ -3,7 +3,8 @@
 Covers the rules enforced by ``cartograph_ai/schema.py``:
 
 * enum values for classification category, recommended tool, probe stage
-* numeric ranges (confidence in [0, 1], estimated_requests >= 0)
+* numeric ranges (confidence in [0, 1]; negative estimated_requests
+  coerced to None per issue #3)
 * the low-confidence-requires-limitations rule from the prompt
 * round-trip JSON encoding for ProbeResult
 """
@@ -50,9 +51,29 @@ def test_extraction_strategy_rejects_unknown_tool():
         _valid_strategy(recommended_tool="curl")
 
 
-def test_extraction_strategy_rejects_negative_request_count():
-    with pytest.raises(ValidationError):
-        _valid_strategy(estimated_requests=-1)
+def test_extraction_strategy_negative_request_count_coerced_to_none():
+    # Issue #3: Claude signals "unknown/indeterminate" with -1 on blocked
+    # targets. The schema accepts the signal and normalises it to None.
+    s = _valid_strategy(estimated_requests=-1)
+    assert s.estimated_requests is None
+
+
+def test_extraction_strategy_accepts_none_request_count():
+    s = _valid_strategy(estimated_requests=None)
+    assert s.estimated_requests is None
+
+
+def test_extraction_strategy_defaults_request_count_to_none():
+    s = _valid_strategy()
+    base = s.model_dump()
+    base.pop("estimated_requests")
+    s2 = ExtractionStrategy(**base)
+    assert s2.estimated_requests is None
+
+
+def test_extraction_strategy_keeps_zero_request_count():
+    s = _valid_strategy(estimated_requests=0)
+    assert s.estimated_requests == 0
 
 
 def test_extraction_strategy_defaults_empty_specifics():

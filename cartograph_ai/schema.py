@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Enums (Literal types so the validator catches typos at parse time) -------
 
@@ -85,9 +85,31 @@ class ExtractionStrategy(BaseModel):
         )
     )
     requires_browser: bool
-    estimated_requests: int = Field(ge=0)
+    estimated_requests: Optional[int] = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Expected number of requests for the recommended strategy. "
+            "None means unknown/indeterminate (e.g., the target blocked "
+            "the probe and no honest estimate exists)."
+        ),
+    )
     recommended_tool: RecommendedTool
     specifics: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("estimated_requests", mode="before")
+    @classmethod
+    def _negative_means_unknown(cls, value: Any) -> Any:
+        """Coerce negative sentinels (e.g., -1) to None.
+
+        Claude sometimes signals "unknown/indeterminate" with -1 when a
+        target blocks the probe (issue #3). Honest-limits philosophy:
+        accept the signal, normalise it to None rather than rejecting
+        the whole response.
+        """
+        if isinstance(value, int) and not isinstance(value, bool) and value < 0:
+            return None
+        return value
 
 
 class Classification(BaseModel):

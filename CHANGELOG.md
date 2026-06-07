@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Fixed
+
+- `extraction_strategy.estimated_requests` now accepts negative sentinel values from Claude (e.g., `-1` on blocked targets) by coercing them to `null`, and the field is `Optional[int]` with `null` meaning unknown/indeterminate. Previously the Pydantic `ge=0` bound rejected the whole response. Schema note: JSON consumers should treat `estimated_requests: null` as "no honest estimate exists." (#3)
+
 ### Added
 
 - Published to PyPI: `pip install cartograph-ai` now resolves from the public registry. Project page: https://pypi.org/project/cartograph-ai/.

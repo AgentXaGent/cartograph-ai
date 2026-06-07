@@ -93,10 +93,15 @@ def _print_rich(result: ProbeResult, *, verbose: bool) -> None:
     stdout_console.print(f"    [dim]{result.classification.reasoning}[/dim]")
 
     strategy = result.extraction_strategy
+    requests_label = (
+        "requests: unknown"
+        if strategy.estimated_requests is None
+        else f"~{strategy.estimated_requests} request(s)"
+    )
     stdout_console.print(
         f"    [green]Recommended:[/green] {strategy.method} "
         f"(tool: {strategy.recommended_tool}, "
-        f"~{strategy.estimated_requests} request(s), "
+        f"{requests_label}, "
         f"browser: {'yes' if strategy.requires_browser else 'no'})"
     )
 
