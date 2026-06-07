@@ -78,28 +78,43 @@ def main(argv: list[str] | None = None) -> int:
     for url, model_to_rec in sorted(by_url.items()):
         model_to_cls = {m: rec.get("classification", "?") for m, rec in model_to_rec.items()}
         labels = [f"{m.split('-')[1]}={c}" for m, c in sorted(model_to_cls.items())]
+        evidence: list[str] = []
         if len(set(model_to_cls.values())) == 1:
             marker = "OK"
             ok += 1
-        elif _hedged_agreement(model_to_rec):
+        elif _hedged_agreement(model_to_rec, evidence=evidence):
             marker = "HEDGED"
             hedged += 1
         else:
             marker = "DIFF"
             diff += 1
         print(f"  [{marker:<6s}] {url:<50s} {' | '.join(labels)}")
+        # Substring matching cannot read negation ("explicitly NOT
+        # static_html" still matches). Print the matched snippet so a
+        # human can audit every HEDGED call.
+        for line in evidence:
+            print(f"           hedge: {line}")
 
     total = ok + hedged + diff
     if total:
         print(
+            f"\n  strict agreement: {ok}/{total}"
             f"\n  honest agreement: {ok + hedged}/{total} "
             f"({ok} identical, {hedged} hedged-equivalent, {diff} real disagreement)"
+            + (
+                "\n  NOTE: audit every HEDGED snippet above; substring "
+                "matching cannot read negation."
+                if hedged
+                else ""
+            )
         )
 
     return 0
 
 
-def _hedged_agreement(model_to_rec: dict[str, dict]) -> bool:
+def _hedged_agreement(
+    model_to_rec: dict[str, dict], evidence: list[str] | None = None
+) -> bool:
     """True when differing top-line classifications are hedge-covered.
 
     Two classifications are hedge-equivalent when at least one side
@@ -111,6 +126,12 @@ def _hedged_agreement(model_to_rec: dict[str, dict]) -> bool:
 
     For every *pair* of differing classifications, coverage in either
     direction is required. Any uncovered pair means real disagreement.
+
+    Known limitation (deliberate, human-in-the-loop): plain substring
+    matching cannot read negation. "explicitly prevents direct_api"
+    still counts as coverage. The ``evidence`` list (mutated in place
+    when provided) carries the matched snippets so callers print them
+    for human audit next to every HEDGED marker.
     """
     hedge_text: dict[str, str] = {}
     for model, rec in model_to_rec.items():
@@ -119,20 +140,34 @@ def _hedged_agreement(model_to_rec: dict[str, dict]) -> bool:
             parts.append(rec["reasoning"])
         hedge_text[model] = " ".join(parts).lower()
 
-    def _mentions(model: str, cls: str) -> bool:
+    def _match_snippet(model: str, cls: str) -> str | None:
         text = hedge_text[model]
-        return cls.lower() in text or cls.replace("_", " ").lower() in text
+        for token in (cls.lower(), cls.replace("_", " ").lower()):
+            idx = text.find(token)
+            if idx >= 0:
+                start = max(0, idx - 40)
+                end = min(len(text), idx + len(token) + 40)
+                return f'{model} names {cls}: "...{text[start:end]}..."'
+        return None
 
     cls_to_models: dict[str, list[str]] = {}
     for model, rec in model_to_rec.items():
         cls_to_models.setdefault(rec.get("classification", "?"), []).append(model)
 
     for c1, c2 in itertools.combinations(sorted(cls_to_models), 2):
-        covered = any(_mentions(m, c2) for m in cls_to_models[c1]) or any(
-            _mentions(m, c1) for m in cls_to_models[c2]
-        )
-        if not covered:
+        snippets = [
+            snip
+            for m in cls_to_models[c1]
+            if (snip := _match_snippet(m, c2)) is not None
+        ] + [
+            snip
+            for m in cls_to_models[c2]
+            if (snip := _match_snippet(m, c1)) is not None
+        ]
+        if not snippets:
             return False
+        if evidence is not None:
+            evidence.extend(snippets)
     return True
 
 

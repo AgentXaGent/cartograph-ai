@@ -101,5 +101,25 @@ def test_main_prints_honest_agreement_line(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "[HEDGED" in out
+    assert "strict agreement: 0/1" in out
     assert "honest agreement: 1/1" in out
     assert "1 hedged-equivalent" in out
+    # Ghost review amendment: every HEDGED call prints its matched
+    # snippet for human audit, plus a negation-blindness warning.
+    assert "hedge: claude-sonnet-4-6 names static_html" in out
+    assert "audit every HEDGED snippet" in out
+
+
+def test_hedge_evidence_collected():
+    evidence = []
+    recs = {
+        "claude-sonnet-4-6": _rec(
+            "claude-sonnet-4-6",
+            "direct_api",
+            limitations=["fall back to static_html if the endpoint 404s"],
+        ),
+        "claude-opus-4-1": _rec("claude-opus-4-1", "static_html"),
+    }
+    assert summarize._hedged_agreement(recs, evidence=evidence) is True
+    assert len(evidence) == 1
+    assert "static_html" in evidence[0]
