@@ -391,7 +391,12 @@ def test_probe_sec_request_carries_declared_contact(monkeypatch):
     finally:
         client.close()
     request = respx.calls[0].request
-    assert "ops@example.com" in request.headers["User-Agent"]
+    ua = request.headers["User-Agent"]
+    assert "ops@example.com" in ua
+    assert ua.startswith("cartograph-ai/")
+    # Issue #24: the repo-URL suffix trips SEC's edge filter; the
+    # declared-contact UA must not carry it.
+    assert "http" not in ua
 
 
 @respx.mock

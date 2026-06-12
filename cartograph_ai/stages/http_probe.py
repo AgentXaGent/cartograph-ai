@@ -85,10 +85,14 @@ def user_agent_for(
             CONTACT_EMAIL_ENV_VAR,
         )
         return user_agent
-    return (
-        f"cartograph-ai/{__version__} {email} "
-        "(+https://github.com/AgentXaGent/cartograph-ai)"
-    )
+    # No repo URL on declared-contact hosts. Empirical finding
+    # (2026-06-12 A/B from a residential origin, issue #24): SEC's
+    # Akamai filter passes 'cartograph-ai/x.y email' (200) but rejects
+    # the same string with the '(+https://...)' repo-URL suffix (403).
+    # The trimmed form is still full disclosure -- tool, version,
+    # contact -- and matches the format SEC documents. Doctrine intact:
+    # this is complying with their convention more exactly, not hiding.
+    return f"cartograph-ai/{__version__} {email}"
 
 
 class _HostPacer:
