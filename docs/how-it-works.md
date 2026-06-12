@@ -203,6 +203,7 @@ What cartograph hands back to the caller (CLI or library):
   "skip_reason": "Clean API discovered in stage 2; stage 3 unnecessary",
   "limitations": [],
   "hallucinations_stripped": [],
+  "unverified_candidates": [],
   "low_confidence_warning": false
 }
 ```

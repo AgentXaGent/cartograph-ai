@@ -33,6 +33,7 @@ from cartograph_ai.schema import (
     EndpointDescriptor,
     ExtractionStrategy,
     ProbeResult,
+    UnverifiedCandidate,
 )
 from cartograph_ai.stages.claude_classify import (
     DEFAULT_MAX_TOKENS,
@@ -220,16 +221,25 @@ def probe(
     report = cross_reference_endpoints(
         classify_result.response, probe_payload=probe_payload
     )
+    unverified_candidates = [
+        UnverifiedCandidate(
+            value=value,
+            source=source,
+            reason="not found verbatim in probe evidence (stages 1-3)",
+        )
+        for value, source in report.unverified
+    ]
     if report.stripped_endpoints:
         log.warning(
-            "cartograph stripped %d hallucinated endpoint(s) from response: %s",
+            "cartograph quarantined %d unverified endpoint(s) from response: %s",
             len(report.stripped_endpoints),
             report.stripped_endpoints,
         )
         extra_limitations.append(
-            "cartograph stripped "
-            f"{len(report.stripped_endpoints)} endpoint(s) the model "
-            "recommended that did not appear in the probe input."
+            f"cartograph moved {len(report.stripped_endpoints)} "
+            "endpoint(s) the model recommended but the probe could not "
+            "confirm into unverified_candidates. Unverified is not the "
+            "same as fake; inspect before discarding."
         )
 
     cleaned_response = report.response
@@ -261,6 +271,7 @@ def probe(
         skip_reason=skip_reason,
         limitations=list(cleaned_response.limitations) + extra_limitations,
         hallucinations_stripped=list(report.stripped_endpoints),
+        unverified_candidates=unverified_candidates,
         low_confidence_warning=low_confidence,
     )
 

@@ -33,6 +33,14 @@ from cartograph_ai.schema import ClaudeResponse
 # REST and WordPress recommendations.
 _URL_LIKE_PREFIXES: tuple[str, ...] = ("http://", "https://", "//", "/")
 
+# Endpoint validation only runs on values that actually look like a URL
+# or path (issue #15). Run 01 caught the model's own self-hedging
+# *sentence* ("this was NOT discovered in the probe...") in endpoint
+# validation because it merely checked the prefix. A URL has no
+# whitespace; prose does. Prose is not a machine-actionable endpoint,
+# so it is not endpoint-validated.
+_URL_MAX_LENGTH = 2048
+
 
 @dataclass
 class ValidationReport:
@@ -45,6 +53,12 @@ class ValidationReport:
     stripped_endpoints: list[str] = field(default_factory=list)
     """URLs that were removed because they did not appear in the probe
     payload. Logged at the orchestrator level."""
+
+    unverified: list[tuple[str, str]] = field(default_factory=list)
+    """(value, source_path) pairs for everything in
+    ``stripped_endpoints``, with provenance, so the orchestrator can
+    build ``unverified_candidates`` entries (issue #15). Quarantined,
+    not deleted."""
 
     @property
     def had_stripped_endpoints(self) -> bool:
@@ -71,37 +85,42 @@ def cross_reference_endpoints(
         is the original instance.
     """
     haystack = _payload_text(probe_payload)
-    stripped: list[str] = []
+    unverified: list[tuple[str, str]] = []
     new_specifics: dict[str, Any] = {}
+    prefix = "extraction_strategy.specifics"
 
     for key, value in response.extraction_strategy.specifics.items():
         if _is_url_like(value):
             if _verbatim_match(value, haystack):
                 new_specifics[key] = value
             else:
-                stripped.append(value)
+                unverified.append((value, f"{prefix}.{key}"))
             continue
 
         if isinstance(value, list):
             cleaned_list: list[Any] = []
-            for item in value:
+            for i, item in enumerate(value):
                 if _is_url_like(item) and not _verbatim_match(item, haystack):
-                    stripped.append(item)
+                    unverified.append((item, f"{prefix}.{key}[{i}]"))
                 else:
                     cleaned_list.append(item)
             new_specifics[key] = cleaned_list
             continue
 
         if isinstance(value, dict):
-            cleaned_dict, nested_stripped = _strip_dict_urls(value, haystack)
+            cleaned_dict, nested_unverified = _strip_dict_urls(
+                value, haystack, source_prefix=f"{prefix}.{key}"
+            )
             new_specifics[key] = cleaned_dict
-            stripped.extend(nested_stripped)
+            unverified.extend(nested_unverified)
             continue
 
         new_specifics[key] = value
 
-    if not stripped:
-        return ValidationReport(response=response, stripped_endpoints=[])
+    if not unverified:
+        return ValidationReport(
+            response=response, stripped_endpoints=[], unverified=[]
+        )
 
     cleaned_strategy = response.extraction_strategy.model_copy(
         update={"specifics": new_specifics}
@@ -109,7 +128,11 @@ def cross_reference_endpoints(
     cleaned_response = response.model_copy(
         update={"extraction_strategy": cleaned_strategy}
     )
-    return ValidationReport(response=cleaned_response, stripped_endpoints=stripped)
+    return ValidationReport(
+        response=cleaned_response,
+        stripped_endpoints=[value for value, _ in unverified],
+        unverified=unverified,
+    )
 
 
 # ---------------- Helpers ---------------------------------------------
@@ -125,9 +148,21 @@ def _payload_text(payload: dict[str, Any]) -> str:
 
 
 def _is_url_like(value: Any) -> bool:
+    """True only for values with the shape of a single URL or path.
+
+    Prose is exempt by design (issue #15): a sentence that happens to
+    start with a slash or scheme is not a machine-actionable endpoint,
+    and running prose through endpoint validation is how the model's
+    own self-hedging text got flagged as a "hallucinated endpoint" in
+    Run 01. URLs contain no whitespace; that is the discriminator.
+    """
     if not isinstance(value, str):
         return False
-    return value.startswith(_URL_LIKE_PREFIXES)
+    if not value.startswith(_URL_LIKE_PREFIXES):
+        return False
+    if len(value) > _URL_MAX_LENGTH:
+        return False
+    return not any(ch.isspace() for ch in value)
 
 
 def _verbatim_match(needle: str, haystack: str) -> bool:
@@ -141,26 +176,26 @@ def _verbatim_match(needle: str, haystack: str) -> bool:
 
 
 def _strip_dict_urls(
-    obj: dict[str, Any], haystack: str
-) -> tuple[dict[str, Any], list[str]]:
-    """Recurse one level into a nested dict, stripping unsupported URLs."""
+    obj: dict[str, Any], haystack: str, *, source_prefix: str
+) -> tuple[dict[str, Any], list[tuple[str, str]]]:
+    """Recurse one level into a nested dict, quarantining unsupported URLs."""
     cleaned: dict[str, Any] = {}
-    stripped: list[str] = []
+    unverified: list[tuple[str, str]] = []
     for k, v in obj.items():
         if _is_url_like(v):
             if _verbatim_match(v, haystack):
                 cleaned[k] = v
             else:
-                stripped.append(v)
+                unverified.append((v, f"{source_prefix}.{k}"))
             continue
         if isinstance(v, list):
             sub: list[Any] = []
-            for item in v:
+            for i, item in enumerate(v):
                 if _is_url_like(item) and not _verbatim_match(item, haystack):
-                    stripped.append(item)
+                    unverified.append((item, f"{source_prefix}.{k}[{i}]"))
                 else:
                     sub.append(item)
             cleaned[k] = sub
             continue
         cleaned[k] = v
-    return cleaned, stripped
+    return cleaned, unverified

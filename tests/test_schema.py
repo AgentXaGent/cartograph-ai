@@ -248,6 +248,7 @@ def test_probe_result_json_shape_matches_docs_example():
         "skip_reason",
         "limitations",
         "hallucinations_stripped",
+        "unverified_candidates",
         "low_confidence_warning",
     }
     assert set(blob.keys()) == expected_keys

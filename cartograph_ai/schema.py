@@ -85,6 +85,37 @@ class EndpointDescriptor(BaseModel):
     auth: Optional[str] = None
 
 
+class UnverifiedCandidate(BaseModel):
+    """An endpoint the model recommended that could not be verified
+    against probe evidence (issue #15).
+
+    Unverified is not the same as fake. Run 01 produced both kinds:
+    invented WordPress routes that deserved to die, and real, documented
+    SEC endpoints (efts.sec.gov, data.sec.gov) that deserved a human
+    look. Deleting both indiscriminately hid true positives from the
+    operator. Candidates are quarantined here — out of the
+    machine-actionable strategy fields, preserved for manual
+    verification — closing the trust loop without weakening the
+    no-fake-endpoints guarantee.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: str = Field(description="The URL or path that failed verification.")
+    source: str = Field(
+        description=(
+            "Where in the model response it came from, e.g. "
+            "'extraction_strategy.specifics.endpoint'."
+        )
+    )
+    reason: str = Field(
+        description=(
+            "Why it was quarantined, e.g. 'not found verbatim in probe "
+            "evidence'."
+        )
+    )
+
+
 class ExtractionStrategy(BaseModel):
     """How to extract data from the probed site."""
 
@@ -209,9 +240,23 @@ class ProbeResult(BaseModel):
         default_factory=list,
         description=(
             "Endpoint URLs the model recommended that did not appear "
-            "verbatim in the probe input and were removed by the "
-            "validation cross-reference. Non-empty means the model "
-            "invented at least one endpoint for this probe."
+            "verbatim in the probe input and were removed from the "
+            "machine-actionable strategy fields by the validation "
+            "cross-reference. Retained for backward compatibility; "
+            "`unverified_candidates` carries the same values with "
+            "provenance (issue #15). Non-empty means the model named "
+            "at least one endpoint the probe could not confirm."
+        ),
+    )
+    unverified_candidates: list[UnverifiedCandidate] = Field(
+        default_factory=list,
+        description=(
+            "Quarantine for endpoints that failed the verbatim "
+            "cross-reference (issue #15). Moved out of "
+            "extraction_strategy.specifics, not deleted: operators can "
+            "inspect and manually verify. Unverified is not the same "
+            "as fake — Run 01 stripped real, documented SEC endpoints "
+            "alongside invented WordPress routes."
         ),
     )
     low_confidence_warning: bool = False

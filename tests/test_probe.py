@@ -422,10 +422,16 @@ def test_hallucinated_endpoint_is_stripped_and_recorded():
         http_client.close()
 
     assert result.extraction_strategy.specifics == {"app_id": "AHNZ21XTZ6"}
-    # The strip is surfaced in limitations.
-    assert any("stripped" in lim for lim in result.limitations)
-    # And as a first-class field (issue #10).
+    # The quarantine is surfaced in limitations (issue #15 wording).
+    assert any("unverified_candidates" in lim for lim in result.limitations)
+    # As the back-compat flat list (issue #10) ...
     assert result.hallucinations_stripped == ["https://hallucinated.invalid/api/x"]
+    # ... and as the provenance-carrying quarantine (issue #15).
+    assert len(result.unverified_candidates) == 1
+    cand = result.unverified_candidates[0]
+    assert cand.value == "https://hallucinated.invalid/api/x"
+    assert cand.source == "extraction_strategy.specifics.fake_endpoint"
+    assert "not found verbatim" in cand.reason
 
 
 # ---------------- Retry behaviour --------------------------------------

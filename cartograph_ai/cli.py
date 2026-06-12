@@ -123,7 +123,13 @@ def _print_rich(result: ProbeResult, *, verbose: bool) -> None:
         for lim in result.limitations:
             stdout_console.print(f"      - [yellow]{lim}[/yellow]")
 
-    if verbose and result.hallucinations_stripped:
+    if verbose and result.unverified_candidates:
+        stdout_console.print("    [magenta]Unverified candidates[/magenta] [dim](quarantined, not deleted; inspect before discarding):[/dim]")
+        for cand in result.unverified_candidates:
+            stdout_console.print(
+                f"      - [magenta]{cand.value}[/magenta] [dim](from {cand.source}; {cand.reason})[/dim]"
+            )
+    elif verbose and result.hallucinations_stripped:
         stdout_console.print("    [magenta]Hallucinations stripped:[/magenta]")
         for url in result.hallucinations_stripped:
             stdout_console.print(f"      - [magenta]{url}[/magenta]")
