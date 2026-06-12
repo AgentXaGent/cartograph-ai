@@ -10,6 +10,8 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-12
+
 ### Fixed
 
 - SEC declared-contact User-Agent no longer carries the repo-URL suffix (#24). Run 03 + a residential-origin A/B (2026-06-12) isolated the SEC edge block to the UA *format*: `cartograph-ai/x.y email` passes (200) while the identical string plus `(+https://github.com/...)` is rejected (403) — same machine, same minute, same path. The trimmed form remains full disclosure (tool, version, contact) and matches SEC's documented convention exactly. With this fix the SEC data layer (data.sec.gov, efts.sec.gov, Archives full-index) is reachable through cartograph's honest client; no fingerprint work, no origin requirements. The default UA on all other hosts keeps the repo URL.

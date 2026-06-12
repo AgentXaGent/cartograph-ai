@@ -86,10 +86,11 @@ def test_confidence_label(value, expected):
 
 
 def test_version_flag():
+    from cartograph_ai._version import __version__
     result = runner.invoke(app, ["--version"])
     assert result.exit_code == 0
     assert "cartograph-ai" in result.output
-    assert "0.1.0" in result.output
+    assert __version__ in result.output
 
 
 def test_help_text_includes_usage():
