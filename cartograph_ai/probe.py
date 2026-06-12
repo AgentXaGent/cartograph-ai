@@ -168,6 +168,19 @@ def probe(
         return unreachable
     stages_completed.append("http")
 
+    # Issue #12: a 403 from an identifiable CDN/WAF edge box is a
+    # network-edge verdict, not a content-layer ambiguity. The origin
+    # never saw the request; Stage 2/4 would be reading a challenge
+    # page, not the site. Classify locally as probe_blocked with the
+    # vendor fingerprint — no Claude call, deterministic, $0.
+    if stage1.get("waf_block"):
+        log.warning(
+            "cartograph edge block for %s: %s",
+            url,
+            stage1["waf_block"]["vendor"],
+        )
+        return _blocked_result(url, stage1=stage1, opts=opts)
+
     status = stage1["status"]
     if status == 401:
         raise AuthWalledError(
@@ -348,6 +361,68 @@ def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeRes
             f"Stage 1 HTTP probe failed: {error}. No content-layer "
             "evidence exists for this URL; the classification is a "
             "network-layer report, not a content judgment."
+        ],
+        low_confidence_warning=False,
+    )
+
+
+def _blocked_result(
+    url: str, *, stage1: dict[str, Any], opts: ProbeOptions
+) -> ProbeResult:
+    """Build the synthetic ``probe_blocked`` result for WAF edge blocks (issue #12).
+
+    No Claude call is made. Unlike ``probe_unreachable`` (no signal at
+    all, confidence 0.0), an identified edge block is positive evidence:
+    the vendor fingerprint comes from headers and block-page markers the
+    probe actually received, so the classification carries high
+    confidence in the *block* — explicitly not a content judgment.
+
+    The downstream action is honest routing, never evasion: check for a
+    sanctioned API or bulk endpoint (issue #21 wires the known-source
+    registry in here), or fall back to manual/browser access. Hard
+    doctrine: cartograph never escalates past honest declared identity.
+    """
+    waf = stage1["waf_block"]
+    vendor = waf["vendor"]
+    evidence = "; ".join(waf["evidence"])
+    return ProbeResult(
+        url=url,
+        probe_timestamp=_dt.datetime.now(_dt.timezone.utc),
+        model="none (stage 4 not reached)",
+        classification=Classification(
+            category="probe_blocked",
+            subcategory=vendor,
+            confidence=0.9,
+            reasoning=(
+                f"HTTP {stage1['status']} served by an identified CDN/WAF "
+                f"edge ({vendor}). Evidence: {evidence}. The origin never "
+                "saw this request; no content-layer evidence exists."
+            ),
+        ),
+        endpoints_discovered=[],
+        extraction_strategy=ExtractionStrategy(
+            method="manual",
+            requires_browser=None,
+            estimated_requests=None,
+            recommended_tool=None,
+            specifics={
+                "block_layer": "cdn_edge",
+                "vendor": vendor,
+                "evidence": waf["evidence"],
+            },
+        ),
+        probe_stages_completed=["http"],
+        probe_stages_skipped=["html_analysis", "js_execution", "claude_classify"],
+        skip_reason=(
+            "Stage 1 identified a CDN/WAF edge block; the served body is "
+            "a challenge page, not the site. Downstream stages skipped."
+        ),
+        limitations=[
+            f"Edge block ({vendor}) at HTTP {stage1['status']}: this is a "
+            "network-edge report, not a content judgment. Check whether "
+            "the operator publishes a sanctioned API or bulk-download "
+            "path; cartograph never escalates past honest declared "
+            "identity."
         ],
         low_confidence_warning=False,
     )

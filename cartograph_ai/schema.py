@@ -33,11 +33,19 @@ ClassificationCategory = Literal[
     "js_rendered_spa",
     "unknown",
     "probe_unreachable",
+    "probe_blocked",
 ]
-"""The six classification buckets from the published prompt, plus
-``probe_unreachable`` — a synthetic category the orchestrator emits when
-Stage 1 cannot reach the target at all (issue #8). Claude never returns
-it; it is built locally without an API call."""
+"""The six classification buckets from the published prompt, plus two
+synthetic categories the orchestrator emits locally without an API call
+(Claude never returns either):
+
+* ``probe_unreachable`` — Stage 1 cannot reach the target at all
+  (issue #8).
+* ``probe_blocked`` — the target answered, but with a 403 from an
+  identifiable CDN/WAF edge box (issue #12). The origin never saw the
+  request, so no content-layer evidence exists; the subcategory carries
+  the vendor fingerprint (``akamai_ghost`` | ``cloudfront`` |
+  ``aws_waf_elb`` | ``cloudflare``)."""
 
 RecommendedTool = Literal[
     "requests",
