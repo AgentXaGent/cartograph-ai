@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cartograph-ai"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Probe before extract. Classify how a site serves data and recommend the optimal extraction strategy."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -66,6 +66,9 @@ Changelog = "https://github.com/AgentXaGent/cartograph-ai/blob/main/CHANGELOG.md
 
 [tool.hatch.build.targets.wheel]
 packages = ["cartograph_ai"]
+
+[tool.hatch.version]
+path = "cartograph_ai/_version.py"
 
 [tool.pytest.ini_options]
 markers = [
