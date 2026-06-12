@@ -1,0 +1,153 @@
+{
+  "registry_version": "2026.06.12",
+  "description": "Known-source registry: authoritative sanctioned access paths for well-known government and industry data sources whose human-facing edge commonly blocks automated clients. cartograph's job on a block is to find the front-of-house door, never to pick the edge lock. Entries ship in-package and update with releases; a CI sanity check verifies the URLs still answer.",
+  "sources": {
+    "sec.gov": {
+      "name": "SEC EDGAR",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://data.sec.gov/",
+          "type": "structured_api",
+          "format": "json/xbrl",
+          "auth": "none",
+          "notes": "Company facts, submissions, XBRL frames. Declared-UA convention required."
+        },
+        {
+          "url": "https://efts.sec.gov/LATEST/search-index?q=",
+          "type": "search_api",
+          "format": "json",
+          "auth": "none",
+          "notes": "EDGAR full-text search backend (the API behind the blocked HTML search UI)."
+        },
+        {
+          "url": "https://www.sec.gov/Archives/edgar/full-index/",
+          "type": "bulk_index",
+          "format": "idx/json",
+          "auth": "none",
+          "notes": "Quarterly full indexes of all filings; static archive paths."
+        }
+      ],
+      "requires": {
+        "ua_format": "Declared contact User-Agent per SEC automation policy: 'Company Name contact@example.com' (cartograph: --contact-email / CARTOGRAPH_CONTACT_EMAIL)"
+      },
+      "notes": "The edge HTML at sec.gov/edgar/search/ is for human discovery; the data lives on the subdomains. SEC explicitly sanctions declared bots."
+    },
+    "nhtsa.gov": {
+      "name": "NHTSA (recalls, complaints, investigations, FARS, SGO)",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://api.nhtsa.gov/",
+          "type": "structured_api",
+          "format": "json",
+          "auth": "none",
+          "notes": "Recalls, complaints, investigations, ratings APIs."
+        },
+        {
+          "url": "https://static.nhtsa.gov/",
+          "type": "bulk_download",
+          "format": "csv/json/zip",
+          "auth": "none",
+          "notes": "Bulk flat files (ODI complaints, recalls, FARS, SGO incident reports)."
+        }
+      ],
+      "requires": {},
+      "notes": "The Akamai 403 protects the human site; both data roots answer automated clients."
+    },
+    "regulations.gov": {
+      "name": "Regulations.gov (federal dockets and comments)",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://api.regulations.gov/v4/",
+          "type": "structured_api",
+          "format": "json",
+          "auth": "api_key",
+          "notes": "Documented v4 REST API. Free key via api.data.gov signup; rate limits apply per key tier."
+        }
+      ],
+      "requires": {
+        "api_key": "Free registration at api.data.gov; pass as X-Api-Key header."
+      },
+      "notes": "CloudFront 403 at the edge is the human UI; the v4 API is the published automation path."
+    },
+    "courtlistener.com": {
+      "name": "CourtListener / RECAP (federal court records)",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://www.courtlistener.com/api/rest/v4/",
+          "type": "structured_api",
+          "format": "json",
+          "auth": "token_optional",
+          "notes": "Documented free REST API (v4 current; v3 paths remain in older docs). Anonymous access rate-limited; token raises limits."
+        },
+        {
+          "url": "https://www.courtlistener.com/help/api/bulk-data/",
+          "type": "bulk_download",
+          "format": "csv/json",
+          "auth": "none",
+          "notes": "Bulk data exports documented here."
+        }
+      ],
+      "requires": {},
+      "notes": "Free Law Project explicitly publishes and encourages API/bulk use over scraping."
+    },
+    "fmcsa.dot.gov": {
+      "name": "FMCSA (carrier safety, registration, orders)",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://mobile.fmcsa.dot.gov/qc/services/",
+          "type": "structured_api",
+          "format": "json/xml",
+          "auth": "api_key",
+          "notes": "QCMobile API (documented; free key via FMCSA developer registration)."
+        },
+        {
+          "url": "https://safer.fmcsa.dot.gov/",
+          "type": "search_portal",
+          "format": "html",
+          "auth": "none",
+          "notes": "SAFER company snapshot; bulk MCMIS extracts are published via the SAFER/MCMIS data dissemination program."
+        }
+      ],
+      "requires": {
+        "api_key": "QCMobile key via FMCSA developer registration (free)."
+      },
+      "notes": "The Akamai 403 on fmcsa.dot.gov/regulations is the human site; carrier data routes through QCMobile/SAFER."
+    },
+    "congress.gov": {
+      "name": "Congress.gov (bills, members, committee data)",
+      "status": "available",
+      "endpoints": [
+        {
+          "url": "https://api.congress.gov/",
+          "type": "structured_api",
+          "format": "json/xml",
+          "auth": "api_key",
+          "notes": "Documented official API; free key via api.data.gov signup."
+        }
+      ],
+      "requires": {
+        "api_key": "Free registration at api.data.gov."
+      },
+      "notes": "cartograph's own limitations output has repeatedly pointed here; promoted to registry."
+    },
+    "serff.com": {
+      "name": "SERFF Filing Access (state insurance rate/form filings)",
+      "status": "none_known",
+      "endpoints": [],
+      "requires": {},
+      "notes": "No public API or bulk path is published. Filing Access is a session-gated portal (per-state instances); access is browser/manual, or via individual state DOI public-access portals. cartograph classifies honestly and stops: no sanctioned automated path exists to recommend."
+    },
+    "tesla.com": {
+      "name": "Tesla Vehicle Safety Report",
+      "status": "none_known",
+      "endpoints": [],
+      "requires": {},
+      "notes": "No public API or bulk download is published for VSR data; quarterly figures are embedded in the page. Browser/manual access only. cartograph classifies honestly and stops."
+    }
+  }
+}

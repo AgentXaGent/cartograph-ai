@@ -85,6 +85,51 @@ class EndpointDescriptor(BaseModel):
     auth: Optional[str] = None
 
 
+class BackdoorEndpoint(BaseModel):
+    """One sanctioned access path from the known-source registry (issue #21)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    type: str = Field(
+        description=(
+            "Path kind: 'structured_api' | 'search_api' | 'bulk_index' "
+            "| 'bulk_download' | 'search_portal'."
+        )
+    )
+    format: Optional[str] = None
+    auth: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class RecommendedBackdoor(BaseModel):
+    """A known-source registry verdict attached to the probe output (issue #21).
+
+    When the probed host (or a host named in the model's limitations)
+    matches the registry, this block routes the operator to the
+    authoritative sanctioned path — even when the surface probe
+    succeeded, because the front-of-house API or bulk endpoint is
+    almost always the better extraction target than the human site.
+    ``status: none_known`` is itself a verdict: the operator publishes
+    no automated path, and the honest recommendation is browser/manual,
+    never evasion.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    matched_domain: str
+    source_name: str
+    status: Literal["available", "none_known"]
+    endpoints: list[BackdoorEndpoint] = Field(default_factory=list)
+    requires: dict[str, str] = Field(default_factory=dict)
+    notes: Optional[str] = None
+    registry_version: str
+    promoted_from: Literal[
+        "registry_host_match",
+        "limitations_cross_reference",
+    ] = "registry_host_match"
+
+
 class UnverifiedCandidate(BaseModel):
     """An endpoint the model recommended that could not be verified
     against probe evidence (issue #15).
@@ -257,6 +302,15 @@ class ProbeResult(BaseModel):
             "inspect and manually verify. Unverified is not the same "
             "as fake — Run 01 stripped real, documented SEC endpoints "
             "alongside invented WordPress routes."
+        ),
+    )
+    recommended_backdoor: Optional[RecommendedBackdoor] = Field(
+        default=None,
+        description=(
+            "Known-source registry verdict (issue #21): the "
+            "authoritative sanctioned access path for this source, "
+            "when one is known. Emitted even on successful probes; "
+            "primary action on probe_blocked."
         ),
     )
     low_confidence_warning: bool = False

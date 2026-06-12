@@ -70,8 +70,9 @@ packages = ["cartograph_ai"]
 [tool.pytest.ini_options]
 markers = [
     "integration: tests that hit the real Anthropic API (cost real money; deselect with '-m \"not integration\"')",
+    "network: tests that hit live third-party hosts (registry URL sanity check; run explicitly with '-m network')",
 ]
-addopts = "-m 'not integration'"
+addopts = "-m 'not integration and not network'"
 testpaths = ["tests"]
 
 [tool.ruff]

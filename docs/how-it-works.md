@@ -204,6 +204,7 @@ What cartograph hands back to the caller (CLI or library):
   "limitations": [],
   "hallucinations_stripped": [],
   "unverified_candidates": [],
+  "recommended_backdoor": null,
   "low_confidence_warning": false
 }
 ```

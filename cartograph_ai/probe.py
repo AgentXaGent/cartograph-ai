@@ -28,11 +28,14 @@ from cartograph_ai.exceptions import (
     PreflightKeyError,
     ProbeUnreachableError,
 )
+from cartograph_ai import registry as known_sources
 from cartograph_ai.schema import (
+    BackdoorEndpoint,
     Classification,
     EndpointDescriptor,
     ExtractionStrategy,
     ProbeResult,
+    RecommendedBackdoor,
     UnverifiedCandidate,
 )
 from cartograph_ai.stages.claude_classify import (
@@ -200,12 +203,23 @@ def probe(
     stage2 = analyze_html(body, stage1.get("final_url") or url)
     stages_completed.append("html_analysis")
 
+    # ---- Stage 2.5: known-source registry lookup (issue #21) ---------
+    # If the host is a known source, the registry entry becomes probe
+    # evidence: the model sees the sanctioned endpoints (and may build
+    # its strategy around them), and because they then appear verbatim
+    # in the payload, the validation cross-reference will not quarantine
+    # them — the Run 01 over-stripping, fixed at the root for known
+    # sources.
+    registry_entry = known_sources.lookup_url(stage1.get("final_url") or url)
+
     # ---- Stage 4: Claude classification ------------------------------
     probe_payload = {
         "url": url,
         "stage1": _stage1_for_payload(stage1),
         "stage2": stage2,
     }
+    if registry_entry is not None:
+        probe_payload["known_source_registry"] = registry_entry
     if opts.debug:
         log.debug("cartograph probe payload assembled for %s", url)
 
@@ -253,6 +267,24 @@ def probe(
             f"Limitations: {cleaned_response.limitations or 'none reported'}"
         )
 
+    # ---- Known-source routing (issue #21) -----------------------------
+    # Direct host match wins. Failing that, if the model's limitations
+    # prose names a registry-known source (the pattern Run 01/03 kept
+    # producing: "api.congress.gov exists but was not probed"), promote
+    # that entry from flavor text to a first-class recommendation.
+    recommended_backdoor = _build_backdoor(
+        registry_entry, promoted_from="registry_host_match"
+    )
+    if recommended_backdoor is None:
+        limitations_text = " ".join(cleaned_response.limitations)
+        for domain in known_sources.find_domains_in_text(limitations_text):
+            entry = known_sources.lookup_host(domain)
+            if entry is not None:
+                recommended_backdoor = _build_backdoor(
+                    entry, promoted_from="limitations_cross_reference"
+                )
+                break
+
     # ---- Assemble public output --------------------------------------
     return ProbeResult(
         url=url,
@@ -272,6 +304,7 @@ def probe(
         limitations=list(cleaned_response.limitations) + extra_limitations,
         hallucinations_stripped=list(report.stripped_endpoints),
         unverified_candidates=unverified_candidates,
+        recommended_backdoor=recommended_backdoor,
         low_confidence_warning=low_confidence,
     )
 
@@ -377,6 +410,24 @@ def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeRes
     )
 
 
+def _build_backdoor(
+    entry: Optional[dict[str, Any]], *, promoted_from: str
+) -> Optional[RecommendedBackdoor]:
+    """Convert a registry entry dict into the output model."""
+    if entry is None:
+        return None
+    return RecommendedBackdoor(
+        matched_domain=entry["matched_domain"],
+        source_name=entry["name"],
+        status=entry["status"],
+        endpoints=[BackdoorEndpoint(**e) for e in entry.get("endpoints", [])],
+        requires=dict(entry.get("requires", {})),
+        notes=entry.get("notes"),
+        registry_version=known_sources.registry_version(),
+        promoted_from=promoted_from,
+    )
+
+
 def _blocked_result(
     url: str, *, stage1: dict[str, Any], opts: ProbeOptions
 ) -> ProbeResult:
@@ -396,6 +447,46 @@ def _blocked_result(
     waf = stage1["waf_block"]
     vendor = waf["vendor"]
     evidence = "; ".join(waf["evidence"])
+
+    # Issue #21: on a block, the registry is the primary action. The
+    # block is not a dead end when the operator publishes a sanctioned
+    # path; it is a sign cartograph probed the human door instead of
+    # the data door.
+    registry_entry = known_sources.lookup_url(stage1.get("final_url") or url)
+    backdoor = _build_backdoor(registry_entry, promoted_from="registry_host_match")
+
+    specifics: dict[str, Any] = {
+        "block_layer": "cdn_edge",
+        "vendor": vendor,
+        "evidence": waf["evidence"],
+    }
+    if backdoor is not None and backdoor.status == "available":
+        specifics["primary_action"] = "use_recommended_backdoor"
+        limitation = (
+            f"Edge block ({vendor}) at HTTP {stage1['status']}: the human "
+            "site blocked the probe, but this source publishes a "
+            "sanctioned automated path — see recommended_backdoor "
+            f"({', '.join(e.url for e in backdoor.endpoints)}). "
+            "cartograph never escalates past honest declared identity."
+        )
+    elif backdoor is not None:
+        specifics["primary_action"] = "manual_or_browser"
+        limitation = (
+            f"Edge block ({vendor}) at HTTP {stage1['status']}: no "
+            "sanctioned automated path is known for this source "
+            "(registry verdict: none_known). Honest options are "
+            "browser/manual access; cartograph never escalates past "
+            "honest declared identity."
+        )
+    else:
+        limitation = (
+            f"Edge block ({vendor}) at HTTP {stage1['status']}: this is a "
+            "network-edge report, not a content judgment. Check whether "
+            "the operator publishes a sanctioned API or bulk-download "
+            "path; cartograph never escalates past honest declared "
+            "identity."
+        )
+
     return ProbeResult(
         url=url,
         probe_timestamp=_dt.datetime.now(_dt.timezone.utc),
@@ -412,15 +503,15 @@ def _blocked_result(
         ),
         endpoints_discovered=[],
         extraction_strategy=ExtractionStrategy(
-            method="manual",
+            method=(
+                "registry_backdoor"
+                if backdoor is not None and backdoor.status == "available"
+                else "manual"
+            ),
             requires_browser=None,
             estimated_requests=None,
             recommended_tool=None,
-            specifics={
-                "block_layer": "cdn_edge",
-                "vendor": vendor,
-                "evidence": waf["evidence"],
-            },
+            specifics=specifics,
         ),
         probe_stages_completed=["http"],
         probe_stages_skipped=["html_analysis", "js_execution", "claude_classify"],
@@ -428,13 +519,8 @@ def _blocked_result(
             "Stage 1 identified a CDN/WAF edge block; the served body is "
             "a challenge page, not the site. Downstream stages skipped."
         ),
-        limitations=[
-            f"Edge block ({vendor}) at HTTP {stage1['status']}: this is a "
-            "network-edge report, not a content judgment. Check whether "
-            "the operator publishes a sanctioned API or bulk-download "
-            "path; cartograph never escalates past honest declared "
-            "identity."
-        ],
+        limitations=[limitation],
+        recommended_backdoor=backdoor,
         low_confidence_warning=False,
     )
 

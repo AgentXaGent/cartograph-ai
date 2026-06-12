@@ -113,6 +113,33 @@ def _print_rich(result: ProbeResult, *, verbose: bool) -> None:
         if remaining > 0:
             stdout_console.print(f"      [dim]+ {remaining} more[/dim]")
 
+    if result.recommended_backdoor:
+        bd = result.recommended_backdoor
+        if bd.status == "available":
+            stdout_console.print(
+                f"    [bold green]Sanctioned path[/bold green] "
+                f"[dim]({bd.source_name}; registry {bd.registry_version}"
+                + (
+                    "; promoted from limitations"
+                    if bd.promoted_from == "limitations_cross_reference"
+                    else ""
+                )
+                + "):[/dim]"
+            )
+            for ep in bd.endpoints:
+                auth_label = f", auth: {ep.auth}" if ep.auth else ""
+                stdout_console.print(
+                    f"      - [green]{ep.url}[/green] [dim]({ep.type}{auth_label})[/dim]"
+                )
+            for req_key, req_val in bd.requires.items():
+                stdout_console.print(f"      [yellow]requires {req_key}:[/yellow] [dim]{req_val}[/dim]")
+        else:
+            stdout_console.print(
+                f"    [yellow]No sanctioned automated path is known for "
+                f"{bd.source_name}[/yellow] [dim](registry {bd.registry_version}): "
+                f"{bd.notes or 'browser/manual access only.'}[/dim]"
+            )
+
     if result.low_confidence_warning:
         stdout_console.print(
             "    [yellow]Warning:[/yellow] confidence is below threshold; review limitations."
