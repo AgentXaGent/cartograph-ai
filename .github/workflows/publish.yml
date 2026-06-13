@@ -1,0 +1,72 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    name: Test suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package + dev extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+      - name: Run unit suite
+        run: python -m pytest -v
+
+  build:
+    name: Build distribution
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Verify wheel version matches tag (the v0.2.0 lesson)
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          WHEEL=$(ls dist/*.whl | head -n1)
+          WHEEL_VER=$(basename "$WHEEL" | awk -F'-' '{print $2}')
+          echo "Tag: v$TAG"
+          echo "Wheel: $(basename "$WHEEL")"
+          echo "Wheel version: $WHEEL_VER"
+          if [ "$TAG" != "$WHEEL_VER" ]; then
+            echo "::error::tag v$TAG does not match wheel version $WHEEL_VER; refusing to publish stale metadata"
+            exit 1
+          fi
+      - name: twine check
+        run: python -m twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI (Trusted Publisher)
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/cartograph-ai
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
