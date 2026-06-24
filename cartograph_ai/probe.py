@@ -410,6 +410,38 @@ def _unreachable_result(url: str, *, error: str, opts: ProbeOptions) -> ProbeRes
     )
 
 
+def _backdoor_is_self_loop(
+    blocked_url: str, backdoor: Optional[RecommendedBackdoor]
+) -> bool:
+    """True when the blocked URL is itself one of the registry's sanctioned
+    endpoint hosts (issue #22).
+
+    When the probed host IS a registry endpoint and the edge blocks it, the
+    ``recommended_backdoor`` points back at the host that just refused the
+    probe — technically correct, operationally circular. The actionable
+    signal then is the unmet access requirement (a declared-UA convention,
+    an API key) or origin/IP sensitivity, not a different door. Host match
+    is exact: a blocked *human* edge (www.nhtsa.gov) routing to a distinct
+    *data* host (api.nhtsa.gov) is a real backdoor, not a self-loop.
+    """
+    if backdoor is None or backdoor.status != "available" or not backdoor.endpoints:
+        return False
+    try:
+        blocked_host = (httpx.URL(blocked_url).host or "").lower().rstrip(".")
+    except (ValueError, TypeError):
+        return False
+    if not blocked_host:
+        return False
+    for ep in backdoor.endpoints:
+        try:
+            ep_host = (httpx.URL(ep.url).host or "").lower().rstrip(".")
+        except (ValueError, TypeError):
+            continue
+        if ep_host and ep_host == blocked_host:
+            return True
+    return False
+
+
 def _build_backdoor(
     entry: Optional[dict[str, Any]], *, promoted_from: str
 ) -> Optional[RecommendedBackdoor]:
@@ -452,15 +484,45 @@ def _blocked_result(
     # block is not a dead end when the operator publishes a sanctioned
     # path; it is a sign cartograph probed the human door instead of
     # the data door.
-    registry_entry = known_sources.lookup_url(stage1.get("final_url") or url)
+    blocked_url = stage1.get("final_url") or url
+    registry_entry = known_sources.lookup_url(blocked_url)
     backdoor = _build_backdoor(registry_entry, promoted_from="registry_host_match")
+    self_loop = _backdoor_is_self_loop(blocked_url, backdoor)
 
     specifics: dict[str, Any] = {
         "block_layer": "cdn_edge",
         "vendor": vendor,
         "evidence": waf["evidence"],
     }
-    if backdoor is not None and backdoor.status == "available":
+    if backdoor is not None and backdoor.status == "available" and self_loop:
+        # Issue #22: the probed URL is itself a registry-sanctioned endpoint
+        # that blocked. Recommending the backdoor would point back at the
+        # door that just refused us. Surface the unmet access requirement
+        # (declared-UA convention, API key) or origin/IP sensitivity as the
+        # actionable signal instead of the circular use_recommended_backdoor.
+        method = "satisfy_requirement"
+        specifics["primary_action"] = "satisfy_unmet_requirement"
+        if backdoor.requires:
+            specifics["unmet_requirements"] = dict(backdoor.requires)
+        req_text = (
+            " Unmet requirement(s): "
+            + "; ".join(f"{k} — {v}" for k, v in backdoor.requires.items())
+            if backdoor.requires
+            else ""
+        )
+        limitation = (
+            f"Edge block ({vendor}) at HTTP {stage1['status']} on a "
+            "registry-sanctioned endpoint: the probed URL is itself the "
+            "published automated path, so there is no different door to "
+            "route to. The block most likely reflects an unmet access "
+            "requirement or origin/IP sensitivity, not a wrong URL."
+            + req_text
+            + " Satisfy the requirement and retry from a sanctioned "
+            "client/origin; cartograph never escalates past honest declared "
+            "identity."
+        )
+    elif backdoor is not None and backdoor.status == "available":
+        method = "registry_backdoor"
         specifics["primary_action"] = "use_recommended_backdoor"
         limitation = (
             f"Edge block ({vendor}) at HTTP {stage1['status']}: the human "
@@ -470,6 +532,7 @@ def _blocked_result(
             "cartograph never escalates past honest declared identity."
         )
     elif backdoor is not None:
+        method = "manual"
         specifics["primary_action"] = "manual_or_browser"
         limitation = (
             f"Edge block ({vendor}) at HTTP {stage1['status']}: no "
@@ -479,6 +542,7 @@ def _blocked_result(
             "honest declared identity."
         )
     else:
+        method = "manual"
         limitation = (
             f"Edge block ({vendor}) at HTTP {stage1['status']}: this is a "
             "network-edge report, not a content judgment. Check whether "
@@ -503,11 +567,7 @@ def _blocked_result(
         ),
         endpoints_discovered=[],
         extraction_strategy=ExtractionStrategy(
-            method=(
-                "registry_backdoor"
-                if backdoor is not None and backdoor.status == "available"
-                else "manual"
-            ),
+            method=method,
             requires_browser=None,
             estimated_requests=None,
             recommended_tool=None,
