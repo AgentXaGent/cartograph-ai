@@ -211,6 +211,45 @@ def test_blocked_known_source_recommends_backdoor_as_primary_action():
 
 
 @respx.mock
+def test_blocked_registry_endpoint_surfaces_unmet_requirement_not_self_loop():
+    """Issue #22: when the probed host IS a sanctioned registry endpoint and
+    it blocks, do not recommend the backdoor (it points back at the blocked
+    host). Surface the unmet access requirement instead."""
+    respx.get("https://data.sec.gov/").mock(
+        return_value=httpx.Response(
+            403, content="Access Denied", headers={"server": "AkamaiGHost"}
+        )
+    )
+    client = StubAnthropic(StubMessage(content=[StubTextBlock(text="{}")]))
+    http_client = httpx.Client(follow_redirects=True, timeout=5.0)
+    try:
+        result = probe(
+            "https://data.sec.gov/",
+            anthropic_client=client,
+            http_client=http_client,
+            options=ProbeOptions(preflight_key_check=False, polite_delay=0.0),
+        )
+    finally:
+        http_client.close()
+
+    assert result.classification.category == "probe_blocked"
+    spec = result.extraction_strategy.specifics
+    assert spec["primary_action"] == "satisfy_unmet_requirement"
+    assert spec["primary_action"] != "use_recommended_backdoor"
+    assert result.extraction_strategy.method == "satisfy_requirement"
+    # the unmet requirement (declared-UA convention) is surfaced
+    assert "unmet_requirements" in spec
+    assert "ua_format" in spec["unmet_requirements"]
+    # the backdoor object still ships (status available), it just is not the
+    # primary action on a self-loop
+    assert result.recommended_backdoor is not None
+    assert result.recommended_backdoor.status == "available"
+    assert any(
+        "registry-sanctioned endpoint" in lim for lim in result.limitations
+    )
+
+
+@respx.mock
 def test_blocked_source_with_no_backdoor_gets_honest_none_known_verdict():
     respx.get("https://filingaccess.serff.com/").mock(
         return_value=httpx.Response(403, content="", headers={"server": "awselb/2.0"})
