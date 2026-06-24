@@ -74,8 +74,9 @@ path = "cartograph_ai/_version.py"
 markers = [
     "integration: tests that hit the real Anthropic API (cost real money; deselect with '-m \"not integration\"')",
     "network: tests that hit live third-party hosts (registry URL sanity check; run explicitly with '-m network')",
+    "hostile: tests that drive synthetic adversarial servers (redirect loops, tarpits, resets, oversized bodies; run with '-m hostile')",
 ]
-addopts = "-m 'not integration and not network'"
+addopts = "-m 'not integration and not network and not hostile'"
 testpaths = ["tests"]
 
 [tool.ruff]
