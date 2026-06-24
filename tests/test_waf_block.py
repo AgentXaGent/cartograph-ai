@@ -101,6 +101,32 @@ def test_detect_cloudfront():
     assert block["vendor"] == "cloudfront"
 
 
+def test_cf_headers_alone_with_json_error_body_is_not_a_block():
+    """x-amz-cf-* headers ride on every CloudFront response, including
+    legitimate keyed-API 403s. A JSON error body is the API answering, not
+    the edge blocking it (issue #23 / Run 03 Finding 2). Must not become a
+    probe_blocked false positive on the kill-metric surface."""
+    block = detect_waf_block(
+        403,
+        httpx.Headers(
+            {"x-amz-cf-id": "abc==", "content-type": "application/json"}
+        ),
+        '{"errors":[{"status":"403","title":"API_KEY_MISSING"}]}',
+    )
+    assert block is None
+
+
+def test_cf_json_body_without_content_type_is_not_a_block():
+    """A body that parses as JSON is an application answering even when the
+    content-type header is absent or generic; still not an edge block."""
+    block = detect_waf_block(
+        403,
+        httpx.Headers({"x-amz-cf-pop": "IAD89-C1"}),
+        '{"errors":[{"detail":"over rate limit"}]}',
+    )
+    assert block is None
+
+
 def test_detect_aws_waf_elb():
     block = detect_waf_block(
         403, httpx.Headers({"server": "awselb/2.0"}), ""
