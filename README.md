@@ -23,51 +23,74 @@ The value isn't probing one URL. The value is doing this 20 or 200 times against
 ```bash
 pip install cartograph-ai  # Requires Python 3.11+
 export ANTHROPIC_API_KEY=your-key
-cartograph-ai https://sasaki.com/projects
+cartograph-ai https://www.nhtsa.gov/recalls
 ```
 
 ```
-sasaki.com/projects
-└── Algolia search API (confidence: high)
-    All 90 projects accessible without a browser.
-    Estimated effort: half a day for a developer.
-    Recommended: GET against app AHNZ21XTZ6, index prod_projects.
+www.nhtsa.gov/recalls
+└── akamai_ghost (confidence: very high, 0.90)
+    HTTP 403 served by an identified CDN/WAF edge (akamai_ghost). The origin
+    never saw this request; no content-layer evidence exists.
+    Recommended: registry_backdoor — the human site is walled, but NHTSA
+    publishes a sanctioned automated path.
+    Sanctioned path (NHTSA recalls/complaints/investigations registry):
+      - https://api.nhtsa.gov/      (structured_api, auth: none)
+      - https://static.nhtsa.gov/   (bulk_download, auth: none)
     Run with --json for machine output.
 ```
+
+That is the whole thesis in one probe: cartograph fingerprinted the wall in front
+of the human site, then routed you to the sanctioned API behind it instead of
+trying to break through. For an auto underwriter, `api.nhtsa.gov` is exactly where
+recall, complaint, and investigation data lives.
 
 Same probe as a Python call:
 
 ```python
 from cartograph_ai import probe
 
-result = probe("https://sasaki.com/projects")
-print(result.classification)        # "algolia_search_api"
-print(result.confidence)            # 0.94
-print(result.extraction_strategy)   # structured dict
+result = probe("https://www.nhtsa.gov/recalls")
+print(result.classification.category)       # "probe_blocked"
+print(result.classification.subcategory)    # "akamai_ghost"
+print(result.classification.confidence)     # 0.9
+# The human site is walled, but the registry routes you to the sanctioned API:
+print(result.recommended_backdoor.endpoints[0].url)  # "https://api.nhtsa.gov/"
 ```
 
 Or the full JSON output (`--json` from CLI, `result.model_dump()` from library):
 
 ```json
 {
-  "url": "https://sasaki.com/projects",
-  "model": "claude-sonnet-4-6",
+  "url": "https://www.nhtsa.gov/recalls",
+  "model": "none (stage 4 not reached)",
   "classification": {
-    "category": "direct_api",
-    "subcategory": "algolia_search",
-    "confidence": 0.94
+    "category": "probe_blocked",
+    "subcategory": "akamai_ghost",
+    "confidence": 0.9
   },
   "extraction_strategy": {
-    "method": "algolia_search",
-    "requires_browser": false,
-    "estimated_requests": 2,
-    "recommended_tool": "requests",
-    "specifics": {"app_id": "AHNZ21XTZ6", "index": "prod_projects"}
+    "method": "registry_backdoor",
+    "requires_browser": null,
+    "recommended_tool": null
+  },
+  "recommended_backdoor": {
+    "matched_domain": "nhtsa.gov",
+    "source_name": "NHTSA (recalls, complaints, investigations, FARS, SGO)",
+    "status": "available",
+    "endpoints": [
+      {"url": "https://api.nhtsa.gov/", "type": "structured_api", "format": "json", "auth": "none"},
+      {"url": "https://static.nhtsa.gov/", "type": "bulk_download", "format": "csv/json/zip", "auth": "none"}
+    ],
+    "registry_version": "2026.06.12"
   }
 }
 ```
 
-About 15 seconds per probe. ~$0.015 in tokens at current Sonnet rates. You're done with the first hour of detective work that usually eats the front of every scraping project.
+This probe never reaches the paid model call: cartograph recognizes the edge block at
+stage 1 and answers from the known-source registry, so it costs effectively nothing. A
+full four-stage probe of an unknown site runs about 15 seconds and ~$0.015 in tokens at
+current Sonnet rates. Either way you are done with the first hour of detective work that
+usually eats the front of every scraping project.
 
 ---
 

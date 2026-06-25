@@ -14,52 +14,87 @@ from typer.testing import CliRunner
 
 from cartograph_ai import (
     Classification,
-    EndpointDescriptor,
     ExtractionStrategy,
     LowConfidenceError,
     ProbeResult,
 )
 from cartograph_ai.cli import _confidence_label, app
 from cartograph_ai.exceptions import HTTPProbeError
+from cartograph_ai.schema import BackdoorEndpoint, RecommendedBackdoor
 
 runner = CliRunner()
 
 
 def _make_probe_result(
     *,
-    confidence: float = 0.94,
+    confidence: float = 0.9,
     low_warning: bool = False,
     limitations: list | None = None,
     hallucinations_stripped: list | None = None,
 ) -> ProbeResult:
+    """The canonical example: a real NHTSA probe.
+
+    ``www.nhtsa.gov`` sits behind an Akamai edge that 403s automated
+    clients, so the probe short-circuits at Stage 1 with a
+    ``probe_blocked`` verdict — and the known-source registry routes the
+    operator to the sanctioned ``api.nhtsa.gov`` backdoor. Mirrors the
+    README Quickstart so the headline test and the headline example tell
+    the same true story (captured 2026-06-25, registry 2026.06.12).
+    """
     return ProbeResult(
-        url="https://sasaki.com/projects",
-        probe_timestamp=datetime(2026, 5, 28, 22, 30, 0, tzinfo=timezone.utc),
-        model="claude-sonnet-4-6",
+        url="https://www.nhtsa.gov/recalls",
+        probe_timestamp=datetime(2026, 6, 25, 14, 37, 6, tzinfo=timezone.utc),
+        model="none (stage 4 not reached)",
         classification=Classification(
-            category="direct_api",
-            subcategory="algolia_search",
+            category="probe_blocked",
+            subcategory="akamai_ghost",
             confidence=confidence,
-            reasoning="Algolia app ID found in inline script.",
+            reasoning=(
+                "HTTP 403 served by an identified CDN/WAF edge "
+                "(akamai_ghost). The origin never saw this request; no "
+                "content-layer evidence exists."
+            ),
         ),
-        endpoints_discovered=[
-            EndpointDescriptor(
-                url="https://AHNZ21XTZ6-dsn.algolia.net/1/indexes/prod_projects/query",
-                type="algolia_search_api",
-            )
-        ],
+        endpoints_discovered=[],
         extraction_strategy=ExtractionStrategy(
-            method="algolia_search",
-            requires_browser=False,
-            estimated_requests=2,
-            recommended_tool="requests",
-            specifics={"app_id": "AHNZ21XTZ6"},
+            method="registry_backdoor",
+            requires_browser=None,
+            estimated_requests=None,
+            recommended_tool=None,
+            specifics={
+                "block_layer": "cdn_edge",
+                "vendor": "akamai_ghost",
+                "primary_action": "use_recommended_backdoor",
+            },
         ),
-        probe_stages_completed=["http", "html_analysis", "claude_classify"],
-        probe_stages_skipped=["js_execution"],
-        skip_reason="Phase 1 only",
+        probe_stages_completed=["http"],
+        probe_stages_skipped=["html_analysis", "js_execution", "claude_classify"],
+        skip_reason=(
+            "Stage 1 identified a CDN/WAF edge block; the served body is a "
+            "challenge page, not the site."
+        ),
         limitations=limitations or [],
         hallucinations_stripped=hallucinations_stripped or [],
+        recommended_backdoor=RecommendedBackdoor(
+            matched_domain="nhtsa.gov",
+            source_name="NHTSA (recalls, complaints, investigations, FARS, SGO)",
+            status="available",
+            endpoints=[
+                BackdoorEndpoint(
+                    url="https://api.nhtsa.gov/",
+                    type="structured_api",
+                    format="json",
+                    auth="none",
+                ),
+                BackdoorEndpoint(
+                    url="https://static.nhtsa.gov/",
+                    type="bulk_download",
+                    format="csv/json/zip",
+                    auth="none",
+                ),
+            ],
+            registry_version="2026.06.12",
+        ),
         low_confidence_warning=low_warning,
     )
 
@@ -108,22 +143,22 @@ def test_rich_output_happy_path(monkeypatch):
     monkeypatch.setattr(
         "cartograph_ai.cli.probe", lambda url, options: _make_probe_result()
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls"])
     assert result.exit_code == 0
     out = result.stdout
-    assert "sasaki.com/projects" in out
-    assert "algolia_search" in out
+    assert "nhtsa.gov/recalls" in out
+    assert "akamai_ghost" in out
     assert "very high" in out
     assert "Recommended:" in out
-    assert "Endpoints:" in out
-    assert "algolia.net" in out
+    assert "Sanctioned path" in out
+    assert "api.nhtsa.gov" in out
 
 
 def test_rich_output_verbose_includes_stage_trace(monkeypatch):
     monkeypatch.setattr(
         "cartograph_ai.cli.probe", lambda url, options: _make_probe_result()
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects", "--verbose"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls", "--verbose"])
     assert result.exit_code == 0
     assert "model:" in result.stdout
     assert "stages:" in result.stdout
@@ -138,7 +173,7 @@ def test_rich_output_verbose_lists_hallucinations_stripped(monkeypatch):
             hallucinations_stripped=["https://hallucinated.invalid/api/x"],
         ),
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects", "--verbose"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls", "--verbose"])
     assert result.exit_code == 0
     assert "Hallucinations stripped:" in result.stdout
     assert "hallucinated.invalid" in result.stdout
@@ -151,7 +186,7 @@ def test_rich_output_non_verbose_omits_hallucination_section(monkeypatch):
             hallucinations_stripped=["https://hallucinated.invalid/api/x"],
         ),
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls"])
     assert result.exit_code == 0
     assert "Hallucinations stripped:" not in result.stdout
 
@@ -164,7 +199,7 @@ def test_json_output_includes_hallucinations_stripped(monkeypatch):
             hallucinations_stripped=["https://hallucinated.invalid/api/x"],
         ),
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects", "--json"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["hallucinations_stripped"] == [
@@ -195,16 +230,17 @@ def test_json_output_emits_valid_probe_result(monkeypatch):
     monkeypatch.setattr(
         "cartograph_ai.cli.probe", lambda url, options: _make_probe_result()
     )
-    result = runner.invoke(app, ["https://sasaki.com/projects", "--json"])
+    result = runner.invoke(app, ["https://www.nhtsa.gov/recalls", "--json"])
     assert result.exit_code == 0
     parsed = json.loads(result.stdout)
-    assert parsed["url"] == "https://sasaki.com/projects"
-    assert parsed["classification"]["category"] == "direct_api"
-    assert parsed["classification"]["confidence"] == 0.94
-    assert parsed["model"] == "claude-sonnet-4-6"
+    assert parsed["url"] == "https://www.nhtsa.gov/recalls"
+    assert parsed["classification"]["category"] == "probe_blocked"
+    assert parsed["classification"]["confidence"] == 0.9
+    assert parsed["model"] == "none (stage 4 not reached)"
+    assert parsed["recommended_backdoor"]["endpoints"][0]["url"] == "https://api.nhtsa.gov/"
     # Roundtrip back into the schema validates the shape.
     revived = ProbeResult.model_validate(parsed)
-    assert revived.url == "https://sasaki.com/projects"
+    assert revived.url == "https://www.nhtsa.gov/recalls"
 
 
 # ---------------- Error paths ------------------------------------------
@@ -252,7 +288,7 @@ def test_strict_and_debug_flags_flow_into_options(monkeypatch):
     result = runner.invoke(
         app,
         [
-            "https://sasaki.com/projects",
+            "https://www.nhtsa.gov/recalls",
             "--strict",
             "--debug",
             "--model",
@@ -262,7 +298,7 @@ def test_strict_and_debug_flags_flow_into_options(monkeypatch):
         ],
     )
     assert result.exit_code == 0
-    assert captured["url"] == "https://sasaki.com/projects"
+    assert captured["url"] == "https://www.nhtsa.gov/recalls"
     assert captured["strict"] is True
     assert captured["debug"] is True
     assert captured["model"] == "claude-haiku-4-5-20251001"

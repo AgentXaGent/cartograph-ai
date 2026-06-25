@@ -10,6 +10,10 @@ Output schema versioning is tracked separately and described in [/docs/how-it-wo
 
 ## [Unreleased]
 
+### Changed
+
+- Canonical Quickstart example swapped from `sasaki.com/projects` (Algolia) to `www.nhtsa.gov/recalls` (NHTSA). Two reasons. (1) *Reproducibility:* the old example named a specific Algolia app ID and index (`AHNZ21XTZ6` / `prod_projects`) on a private firm's site — values that can change without notice, leaving the headline example unverifiable in ten seconds. (2) *Coherence:* a recall/complaint/investigation source is a self-evident, stable, public-data target, and NHTSA is already a first-class entry in the known-source registry shipped in 0.2.0 (#21). The new example is a live capture (2026-06-25, registry 2026.06.12): `www.nhtsa.gov` is Akamai-fronted and 403s automated clients, so the probe short-circuits to `probe_blocked`/`akamai_ghost` at Stage 1 and the registry routes to the sanctioned `api.nhtsa.gov` / `static.nhtsa.gov` backdoor. That makes the Quickstart demonstrate the v0.2 headline feature (`recommended_backdoor`) and the no-evasion doctrine in a single probe, rather than a plain `direct_api` hit. Touched: `README.md` Quickstart (CLI/Python/JSON blocks), the `cartograph-ai --help` example in `cli.py`, and the canonical CLI test fixture (`tests/test_cli.py::_make_probe_result`, now mirroring the real NHTSA result). Scope boundary: `sasaki` deliberately remains in internal scaffolding that is not the canonical example — the Algolia hallucination-stripping fixtures in `test_validation.py`, the non-`.gov` pacing *control* in `test_http_probe.py`, the respx mocks in `test_probe.py`, the schema illustration in `docs/how-it-works.md` (richer as a fully-populated `direct_api` shape), the `bench/urls.json` reference case (changing it would break benchmark comparability), and the `test_sasaki_smoke.py` live integration test. Full suite green (240 passed).
+
 ## [0.2.0] - 2026-06-12
 
 ### Fixed
