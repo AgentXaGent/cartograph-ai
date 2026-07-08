@@ -231,7 +231,7 @@ def main(
 
     Example:
 
-        cartograph-ai https://sasaki.com/projects
+        cartograph-ai https://www.nhtsa.gov/recalls
     """
     _configure_logging(debug=debug)
 
